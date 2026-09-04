@@ -9,15 +9,17 @@ foreach($name in @('SidecarDOS.dll','SidecarDOS.inf','sidecardos.cat')){
     Copy-Item -LiteralPath (Join-Path $root "build\driver\Release\$name") -Destination (Join-Path $package 'driver')
 }
 Get-ChildItem -LiteralPath (Join-Path $root 'windows\installer') -Filter '*.ps1' | Copy-Item -Destination (Join-Path $package 'installer')
-Copy-Item -LiteralPath (Join-Path $root 'README.md') -Destination $package
+foreach ($readme in @('README.md', 'README.zh-CN.md')) {
+    Copy-Item -LiteralPath (Join-Path $root $readme) -Destination $package
+}
 New-Item -ItemType Directory -Force -Path (Join-Path $package 'docs'),(Join-Path $package 'protocol') | Out-Null
 Get-ChildItem -LiteralPath (Join-Path $root 'docs') -Filter '*.md' | Copy-Item -Destination (Join-Path $package 'docs')
 Copy-Item -LiteralPath (Join-Path $root 'protocol\README.md') -Destination (Join-Path $package 'protocol')
-Set-Content -LiteralPath (Join-Path $package 'UNSIGNED-DRIVER.txt') -Value 'The driver in this developer package is unsigned. Follow README signing instructions on a test machine before installing it. The Windows-to-iPad physical-device acceptance tests have not been completed.'
+Set-Content -LiteralPath (Join-Path $package 'UNSIGNED-DRIVER.txt') -Value 'The driver in this developer package is unsigned. Follow the signing instructions in docs/advanced.md on a test machine before installing it. The Windows-to-iPad physical-device acceptance tests have not been completed.'
 Set-Content -LiteralPath (Join-Path $package 'INSTALL.txt') -Value @'
 SidecarDOS Windows developer package
 
-The driver is unsigned and must be signed and trusted on a dedicated test machine before installation. This package does not change Windows signing policy. See README.md and docs/validation.md for requirements and what has been verified.
+The driver is unsigned and must be signed and trusted on a dedicated test machine before installation. This package does not change Windows signing policy. See docs/advanced.md for setup and signing, and docs/validation.md for development and validation status.
 
 After signing, use an administrator PowerShell:
   ./installer/Install-Driver.ps1 -Package ./driver -Devcon <path-to-WDK-devcon.exe>
@@ -26,7 +28,7 @@ After signing, use an administrator PowerShell:
 Start ./sidecardos-host.exe as your ordinary logged-in user. The iPad client must be built and signed from the repository using Xcode. Optional current-user startup:
   ./installer/Set-Autostart.ps1 -HostExecutable ./sidecardos-host.exe
 
-The README build commands refer to the source repository, not this binary package.
+README.md and README.zh-CN.md cover everyday use. The build commands in docs/advanced.md refer to the source repository, not this binary package.
 '@
 $zip=Join-Path $root 'build\SidecarDOS-windows-x64.zip'
 Compress-Archive -LiteralPath $package -DestinationPath $zip -Force

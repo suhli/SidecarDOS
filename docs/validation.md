@@ -1,4 +1,14 @@
-# Validation record
+# Development and validation status
+
+[User guide](../README.md) · [Advanced guide](advanced.md)
+
+This document is the English-only record of implementation checks, acceptance gaps and current limitations. Local checks recorded below were performed on September 4, 2026.
+
+## Overall status
+
+The Windows Host and driver have local build results, and the hardware encoder has passed an offscreen self-test. Xcode compilation, signed driver installation and the physical Windows-to-iPad path still require validation. The full wireless extended-display MVP has not passed acceptance.
+
+## Recorded environment
 
 Development environment: Windows 11 x64, Rust stable 1.97.1, Visual Studio 2022 MSVC, Windows SDK 10.0.26100, official Microsoft.Windows.WDK.x64 10.0.26100.6584 package.
 
@@ -29,3 +39,16 @@ These checks were not executed here and remain necessary for acceptance:
 - Vendor matrix: NVIDIA / AMD / Intel. Enumeration supports all through official APIs, but one machine is not a vendor compatibility certification.
 
 The implementation and unsigned build outputs are provided for this integration work. The repository does not claim that the full wireless extended-display MVP has passed acceptance.
+
+## Current limitations
+
+- Supported scope is Windows 11 x64 to iPadOS, with one interactive user, one iPad and one virtual display. There is no Session 0 desktop control.
+- Local driver build outputs are unsigned. They are development artifacts, not a signed driver distribution. Signing and installation are separate steps.
+- Encoding requires a hardware H.264 MFT that accepts GPU input. No software fallback is implemented; incompatible hardware causes session cleanup and an explicit error.
+- Vendor selection uses standard APIs, but NVIDIA, AMD and Intel hardware still need a broader compatibility test matrix.
+- HEVC/AV1, HDR/10-bit, 120 Hz, Apple Pencil/PT_PEN, audio, clipboard, USB transport and multiple iPads are not implemented. Protocol fields and module boundaries allow later extensions.
+- Input injection follows Windows UIPI and cannot control elevated windows, secure desktops or sign-in screens. Some iPadOS system shortcuts cannot be forwarded. Matching keyboard layouts should be selected on both devices.
+- The UI consists of a basic native Windows tray and SwiftUI client. Pairing requires the full high-entropy code; there is no QR-code flow.
+- iPad orientation changes reconnect and renegotiate display modes, which may briefly blank the image. Lock, background and network transitions still need physical-device acceptance.
+- Latency statistics use estimated clock offsets and do not establish hardware-synchronized end-to-end latency. A successful encoder self-test does not prove sustained wireless 1080p60 performance.
+- No cloud relay, Internet remote-desktop service, protected-content capture or DRM bypass is provided.
