@@ -65,7 +65,7 @@ struct Encoder {
  }
  void set(const GUID& key,ULONG value,bool required=true){
   VARIANT v;VariantInit(&v);v.vt=VT_UI4;v.ulVal=value;HRESULT hr=codec->SetValue(&key,&v);
-  if(required)check(hr);
+  if(required && FAILED(hr)){sprintf_s(errorText,"ICodecAPI property %08lx, value %lu: 0x%08lx",key.Data1,value,static_cast<unsigned long>(hr));throw hr;}
  }
  void flag(const GUID& key,bool enabled,bool required=true){
   VARIANT v;VariantInit(&v);v.vt=VT_BOOL;v.boolVal=enabled?VARIANT_TRUE:VARIANT_FALSE;
