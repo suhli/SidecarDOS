@@ -23,7 +23,7 @@ WDF_DECLARE_CONTEXT_TYPE(Context);
 EVT_WDF_DRIVER_DEVICE_ADD AddDevice;
 EVT_WDF_DEVICE_D0_ENTRY EnterD0;
 EVT_WDF_DEVICE_D0_EXIT ExitD0;
-EVT_WDF_IO_QUEUE_IO_DEVICE_CONTROL IoControl;
+EVT_IDD_CX_DEVICE_IO_CONTROL IoControl;
 EVT_WDF_FILE_CLEANUP FileCleanup;
 EVT_WDF_OBJECT_CONTEXT_CLEANUP Cleanup;
 EVT_IDD_CX_ADAPTER_INIT_FINISHED AdapterReady;
@@ -50,8 +50,10 @@ struct Device {
  std::mutex mutex;std::unique_ptr<Worker> worker;
  std::vector<SdMode> modes;
  std::array<uint8_t,128> edid{};
- SdStatus status{SD_ABI};SdSurfaces surfaces{};
+ SdStatus status{SD_ABI};SdSurfaces surfaces{};UINT surfaceRevision=0;
  bool ready=false;
+ HANDLE wake=CreateEventW(nullptr,FALSE,FALSE,nullptr);
+ ~Device(){if(wake)CloseHandle(wake);}
  void depart(){
   // IddCx may invoke Unassign synchronously: never hold mutex while notifying it.
   IDDCX_MONITOR old=nullptr;
@@ -80,7 +82,7 @@ struct Device {
   if(!ready||!adapter)return NotReady;
   if(start.abi!=SD_ABI||start.count<1||start.count>SD_MODES)return Invalid;
   for(UINT i=0;i<start.count;i++){const auto& m=start.modes[i];if(m.width<320||m.height<320||m.width>4094||m.height>4094||(m.width&1)||(m.height&1)||m.fps<30||m.fps>60)return Invalid;}
-  depart();modes.assign(start.modes,start.modes+start.count);makeEdid(start);
+  depart();status.fps=start.modes[0].fps;modes.assign(start.modes,start.modes+start.count);makeEdid(start);
   IDDCX_MONITOR_INFO info{};info.Size=sizeof(info);info.MonitorType=DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED;
   info.ConnectorIndex=0;info.MonitorContainerId=start.identity;
   info.MonitorDescription.Size=sizeof(IDDCX_MONITOR_DESCRIPTION);info.MonitorDescription.Type=IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
@@ -109,17 +111,23 @@ void Worker::run() noexcept {
   IDARG_IN_SWAPCHAINSETDEVICE set{};set.pDevice=dxgi.Get();if(FAILED(IddCxSwapChainSetDevice(chain,&set)))return;
   std::array<ComPtr<ID3D11Texture2D>,3> shared;
   std::array<ComPtr<IDXGIKeyedMutex>,3> mutexes;
-  UINT localGeneration=0;uint64_t frame=0;
+  UINT localRevision=0;uint64_t frame=0;
+  ComPtr<ID3D11Texture2D> latest;
   while(WaitForSingleObject(stop,0)==WAIT_TIMEOUT){
    IDARG_OUT_RELEASEANDACQUIREBUFFER out{};
    HRESULT hr=IddCxSwapChainReleaseAndAcquireBuffer(chain,&out);
+   bool fresh=SUCCEEDED(hr);
    if(hr==E_PENDING){
-    HANDLE events[]{stop,available};DWORD wait=WaitForMultipleObjects(2,events,FALSE,INFINITE);
-    if(wait!=WAIT_OBJECT_0+1)break;continue;
-   }
-   if(FAILED(hr))break;
-   ComPtr<IDXGIResource> surface;surface.Attach(out.MetaData.pSurface);
-   ComPtr<ID3D11Texture2D> texture;if(FAILED(surface.As(&texture)))break;
+    DWORD timeout=INFINITE;
+    {std::lock_guard<std::mutex> guard(owner.mutex);if(owner.surfaces.abi==SD_ABI)timeout=1000/std::max<UINT>(owner.status.fps,30);}
+    HANDLE events[]{stop,available,owner.wake};DWORD wait=WaitForMultipleObjects(3,events,FALSE,timeout);
+    if(wait==WAIT_OBJECT_0||wait==WAIT_FAILED)break;
+    if(wait==WAIT_OBJECT_0+1)continue;
+    if(!latest)continue;
+   }else if(FAILED(hr))break;
+   ComPtr<IDXGIResource> surface;
+   if(fresh){surface.Attach(out.MetaData.pSurface);if(FAILED(surface.As(&latest)))break;}
+   ComPtr<ID3D11Texture2D> texture=latest;
    D3D11_TEXTURE2D_DESC desc{};texture->GetDesc(&desc);
    const uint64_t capture=clockUs();++frame;
    {
@@ -129,7 +137,7 @@ void Worker::run() noexcept {
      owner.status.width=desc.Width;owner.status.height=desc.Height;owner.status.luid_low=luid.LowPart;owner.status.luid_high=luid.HighPart;
      ++owner.status.generation;owner.surfaces={};for(auto& s:owner.status.slots)s={};
     }
-    if(localGeneration!=owner.surfaces.generation&&owner.surfaces.generation==owner.status.generation){
+    if(localRevision!=owner.surfaceRevision&&owner.surfaces.generation==owner.status.generation){
      for(UINT i=0;i<3;i++){
       shared[i].Reset();mutexes[i].Reset();
       if(SUCCEEDED(device1->OpenSharedResourceByName(owner.surfaces.names[i],DXGI_SHARED_RESOURCE_READ|DXGI_SHARED_RESOURCE_WRITE,IID_PPV_ARGS(&shared[i])))){
@@ -138,7 +146,7 @@ void Worker::run() noexcept {
        shared[i].As(&mutexes[i]);
       }
      }
-     localGeneration=owner.surfaces.generation;
+     localRevision=owner.surfaceRevision;
     }
     for(UINT i=0;i<3;i++){
      if(!mutexes[i])continue;
@@ -150,7 +158,7 @@ void Worker::run() noexcept {
     }
    }
    texture.Reset();surface.Reset();
-   if(FAILED(IddCxSwapChainFinishedProcessingFrame(chain)))break;
+   if(fresh&&FAILED(IddCxSwapChainFinishedProcessingFrame(chain)))break;
   }
  };
  try{body();}catch(...){OutputDebugStringW(L"SidecarDOS: swapchain worker failed\n");}
@@ -204,8 +212,8 @@ NTSTATUS Assign(IDDCX_MONITOR m,const IDARG_IN_SETSWAPCHAIN* in){
  return Success;
 }
 NTSTATUS Unassign(IDDCX_MONITOR m){auto* d=WdfObjectGet_Context(m)->device;d->worker.reset();return Success;}
-void IoControl(WDFQUEUE q,WDFREQUEST request,size_t outSize,size_t inSize,ULONG code){
- auto* d=WdfObjectGet_Context(WdfIoQueueGetDevice(q))->device;NTSTATUS result=Invalid;ULONG_PTR bytes=0;
+void IoControl(WDFDEVICE device,WDFREQUEST request,size_t outSize,size_t inSize,ULONG code){
+ auto* d=WdfObjectGet_Context(device)->device;NTSTATUS result=Invalid;ULONG_PTR bytes=0;
  try {
   if(code==SD_START&&inSize==sizeof(SdStart)){
    SdStart* in=nullptr;result=WdfRequestRetrieveInputBuffer(request,sizeof(SdStart),reinterpret_cast<void**>(&in),nullptr);
@@ -220,7 +228,7 @@ void IoControl(WDFQUEUE q,WDFREQUEST request,size_t outSize,size_t inSize,ULONG 
     std::lock_guard<std::mutex> guard(d->mutex);result=Invalid;
     bool valid=in->abi==SD_ABI&&in->generation==d->status.generation;
     for(const auto& n:in->names)valid=valid&&n[SD_NAME-1]==0&&wcsncmp(n,L"Global\\SidecarDOS.",18)==0;
-    if(valid){d->surfaces=*in;result=Success;}
+    if(valid){d->surfaces=*in;++d->surfaceRevision;if(d->wake)SetEvent(d->wake);result=Success;}
    }
   }
  }catch(...){result=static_cast<NTSTATUS>(0xc000009a);}
@@ -236,6 +244,8 @@ NTSTATUS EnterD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){
  caps.EndPointDiagnostics.pEndPointFriendlyName=L"SidecarDOS Virtual Display";
  caps.EndPointDiagnostics.pEndPointManufacturerName=L"SidecarDOS";caps.EndPointDiagnostics.pEndPointModelName=L"SidecarDOS v1";
  WDF_OBJECT_ATTRIBUTES attrs;WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attrs,Context);
+ IDDCX_ENDPOINT_VERSION version{};version.Size=sizeof(version);version.MajorVer=1;
+ caps.EndPointDiagnostics.pFirmwareVersion=&version;caps.EndPointDiagnostics.pHardwareVersion=&version;
  IDARG_IN_ADAPTER_INIT in{};in.WdfDevice=device;in.pCaps=&caps;in.ObjectAttributes=&attrs;
  IDARG_OUT_ADAPTER_INIT out{};NTSTATUS result=IddCxAdapterInitAsync(&in,&out);
  if(result>=0){d->adapter=out.AdapterObject;WdfObjectGet_Context(out.AdapterObject)->device=d;}return result;
@@ -248,6 +258,7 @@ NTSTATUS AddDevice(WDFDRIVER,PWDFDEVICE_INIT init){
  WDF_PNPPOWER_EVENT_CALLBACKS pnp;WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnp);pnp.EvtDeviceD0Entry=EnterD0;pnp.EvtDeviceD0Exit=ExitD0;
  WdfDeviceInitSetPnpPowerEventCallbacks(init,&pnp);
  IDD_CX_CLIENT_CONFIG config;IDD_CX_CLIENT_CONFIG_INIT(&config);
+ config.EvtIddCxDeviceIoControl=IoControl;
  config.EvtIddCxAdapterInitFinished=AdapterReady;config.EvtIddCxAdapterCommitModes=Commit;
  config.EvtIddCxParseMonitorDescription=Parse;config.EvtIddCxMonitorGetDefaultDescriptionModes=DefaultModes;
  config.EvtIddCxMonitorQueryTargetModes=TargetModes;config.EvtIddCxMonitorAssignSwapChain=Assign;config.EvtIddCxMonitorUnassignSwapChain=Unassign;
@@ -259,8 +270,7 @@ NTSTATUS AddDevice(WDFDRIVER,PWDFDEVICE_INIT init){
  c->device->wdf=device;
  result=IddCxDeviceInitialize(device);if(result<0)return result;
  result=WdfDeviceCreateDeviceInterface(device,&SIDECARDOS_INTERFACE,nullptr);if(result<0)return result;
- WDF_IO_QUEUE_CONFIG queue;WDF_IO_QUEUE_CONFIG_INIT_DEFAULT_QUEUE(&queue,WdfIoQueueDispatchSequential);queue.EvtIoDeviceControl=IoControl;
- return WdfIoQueueCreate(device,&queue,WDF_NO_OBJECT_ATTRIBUTES,WDF_NO_HANDLE);
+ return Success;
 }
 }
 extern "C" DRIVER_INITIALIZE DriverEntry;

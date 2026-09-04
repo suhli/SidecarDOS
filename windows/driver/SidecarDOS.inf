@@ -23,12 +23,16 @@ SidecarDOS.dll=1
 DriverCopy=13
 
 [Install.NT]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT
 CopyFiles=DriverCopy
 
 [DriverCopy]
 SidecarDOS.dll
 
 [Install.NT.HW]
+Include=WUDFRD.inf
+Needs=WUDFRD.NT.HW
 AddReg=Hardware
 
 [Hardware]
@@ -37,24 +41,18 @@ HKR,"WUDF","DeviceGroupId",0x00000000,"SidecarDOS"
 HKR,,Security,0x00000000,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"
 
 [Install.NT.Services]
-AddService=IndirectKmd,0x000001fa,IndirectService
-
-[IndirectService]
-DisplayName=%Device%
-ServiceType=1
-StartType=3
-ErrorControl=1
-ServiceBinary=%12%\IndirectKmd.sys
+Include=WUDFRD.inf
+Needs=WUDFRD.NT.Services
 
 [Install.NT.Wdf]
 UmdfService=SidecarDOS,UMDF
 UmdfServiceOrder=SidecarDOS
 UmdfKernelModeClientPolicy=AllowKernelModeClients
-UmdfExtensions=IddCx0102
 UmdfFileObjectPolicy=AllowNullAndUnknownFileObjects
 UmdfFsContextUsePolicy=CanUseFsContext2
 
 [UMDF]
+UmdfExtensions=IddCx0102
 UmdfLibraryVersion=2.25.0
 ServiceBinary=%13%\SidecarDOS.dll
 UmdfHostProcessSharing=ProcessSharingDisabled
