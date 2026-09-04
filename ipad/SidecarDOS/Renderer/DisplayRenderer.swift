@@ -9,8 +9,12 @@ import CoreVideo
     private var pending: DecodedFrame?
     private var inFlight = 0
     var onPresent: ((DecodedFrame, UInt64, UInt64) -> Void)?
-    init() throws {
-        guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue(),
+    static func makeDefault() throws -> DisplayRenderer {
+        guard let device = MTLCreateSystemDefaultDevice() else { throw WireError.unexpected }
+        return try DisplayRenderer(device: device)
+    }
+    init(device: MTLDevice) throws {
+        guard let queue = device.makeCommandQueue(),
               let library = device.makeDefaultLibrary() else { throw WireError.unexpected }
         self.device = device; self.queue = queue
         let descriptor = MTLRenderPipelineDescriptor()

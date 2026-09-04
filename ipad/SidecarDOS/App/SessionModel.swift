@@ -40,7 +40,7 @@ import os
     private var previousLosses: UInt32 = 0, previousReceived: UInt32 = 0, previousMissing: UInt32 = 0
     private let log = Logger(subsystem: "dev.sidecardos", category: "session")
     init() {
-        do { clientID = try TrustStore.identity(); renderer = try DisplayRenderer() }
+        do { clientID = try TrustStore.identity(); renderer = try DisplayRenderer.makeDefault() }
         catch { renderer = nil; message = "Initialization failed: \(error)"; state = .failed }
         transport.onReady = { [weak self] in self?.ready() }
         transport.onPacket = { [weak self] packet in try self?.packet(packet) }

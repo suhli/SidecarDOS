@@ -20,8 +20,8 @@ import MetalKit
         scroll.allowedScrollTypesMask = .all; scroll.allowedTouchTypes = []; scroll.cancelsTouchesInView = false
         addGestureRecognizer(scroll)
     }
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { return nil }
+    @available(*, unavailable, message: "Use init(renderer:) instead.")
+    required init(coder: NSCoder) { super.init(coder: coder) }
     private func normalized(_ point: CGPoint, clamp: Bool = false) -> CGPoint? {
         let rect = DisplayRenderer.rect(container: bounds.size, video: videoSize)
         guard rect.width > 0, rect.height > 0, clamp || rect.contains(point) else { return nil }

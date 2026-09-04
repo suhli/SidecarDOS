@@ -46,7 +46,7 @@ The implementation and unsigned build outputs are provided for this integration 
 [GitHub Actions run 33861481873](https://github.com/suhli/SidecarDOS/actions/runs/33861481873) failed in both jobs.
 
 - Host stopped at the generated-protocol check. The failure was reproduced locally by converting generated files to CRLF. The checker now normalizes CRLF only, generated outputs have LF Git attributes, and regression tests are part of CI and the Windows build script. The updated generator tests, protocol check, Rust formatting, Rust tests, strict Clippy and release build passed locally. This fix has not yet been verified in a new remote run.
-- The iPad job reached xcodebuild and exited with code 65. Detailed compiler diagnostics were not available in this environment, so its underlying failure remains unresolved.
+- The iPad job reached Xcode 16.4 / iOS Simulator SDK 18.5 and exited with code 65. The supplied log identified two initializer conflicts on both arm64 and x86_64: a throwing DisplayRenderer.init() overriding non-throwing NSObject.init(), and a failable InputView.init(coder:) overriding the non-failable MTKView initializer. The renderer now uses a throwing makeDefault() factory and an explicit init(device:); the unavailable coder initializer matches the superclass and delegates to it. Source and call sites were reviewed locally. Xcode is unavailable on this Windows machine, so the corrected iPad build still requires a new CI run.
 
 ## Current limitations
 
