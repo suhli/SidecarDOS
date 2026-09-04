@@ -1,5 +1,8 @@
 #include <Windows.h>
+#pragma warning(push)
+#pragma warning(disable:4324)
 #include <wdf.h>
+#pragma warning(pop)
 #include <iddcx.h>
 #include <d3d11_1.h>
 #include <dxgi1_4.h>
@@ -180,7 +183,7 @@ NTSTATUS AdapterReady(IDDCX_ADAPTER a,const IDARG_IN_ADAPTER_INIT_FINISHED* in){
 NTSTATUS Commit(IDDCX_ADAPTER,const IDARG_IN_COMMITMODES*){return Success;}
 NTSTATUS Parse(const IDARG_IN_PARSEMONITORDESCRIPTION* in,IDARG_OUT_PARSEMONITORDESCRIPTION* out){
  if(in->MonitorDescription.DataSize!=128)return Invalid;
- const auto* edid=in->MonitorDescription.pData;std::vector<SdMode> modes;
+ const auto* edid=static_cast<const uint8_t*>(in->MonitorDescription.pData);std::vector<SdMode> modes;
  for(UINT i=0;i<4;i++){
   const auto* d=edid+54+18*i;UINT clock=d[0]|(d[1]<<8);if(!clock)continue;
   UINT w=d[2]|((d[4]>>4)<<8),h=d[5]|((d[7]>>4)<<8);
@@ -252,7 +255,6 @@ NTSTATUS EnterD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){
 }
 NTSTATUS ExitD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){auto* d=WdfObjectGet_Context(device)->device;d->ready=false;d->depart();return Success;}
 NTSTATUS AddDevice(WDFDRIVER,PWDFDEVICE_INIT init){
- WdfDeviceInitSetExclusive(init,TRUE);
  WDF_FILEOBJECT_CONFIG file;WDF_FILEOBJECT_CONFIG_INIT(&file,WDF_NO_EVENT_CALLBACK,WDF_NO_EVENT_CALLBACK,FileCleanup);
  WdfDeviceInitSetFileObjectConfig(init,&file,WDF_NO_OBJECT_ATTRIBUTES);
  WDF_PNPPOWER_EVENT_CALLBACKS pnp;WDF_PNPPOWER_EVENT_CALLBACKS_INIT(&pnp);pnp.EvtDeviceD0Entry=EnterD0;pnp.EvtDeviceD0Exit=ExitD0;

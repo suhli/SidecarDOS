@@ -8,10 +8,10 @@
  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props"/>
  <PropertyGroup Label="Configuration"><ConfigurationType>DynamicLibrary</ConfigurationType><PlatformToolset>WindowsUserModeDriver10.0</PlatformToolset><DriverType>UMDF</DriverType><DriverTargetPlatform>Universal</DriverTargetPlatform><TargetVersion>Windows10</TargetVersion></PropertyGroup>
  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props"/>
- <PropertyGroup><TargetName>SidecarDOS</TargetName><OutDir>$(ProjectDir)..\..\build\driver\$(Configuration)\</OutDir><IntDir>$(OutDir)obj\</IntDir><IddCxVersion>1.2</IddCxVersion><UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR></PropertyGroup>
+ <PropertyGroup><TargetName>SidecarDOS</TargetName><OutDir>$(ProjectDir)..\..\build\driver\$(Configuration)\</OutDir><IntDir>$(OutDir)obj\</IntDir><IndirectDisplayDriver>true</IndirectDisplayDriver><IDDCX_VERSION_MAJOR>1</IDDCX_VERSION_MAJOR><IDDCX_VERSION_MINOR>2</IDDCX_VERSION_MINOR><UMDF_VERSION_MINOR>25</UMDF_VERSION_MINOR><UMDF_VERSION_MAJOR>2</UMDF_VERSION_MAJOR></PropertyGroup>
  <ItemDefinitionGroup>
   <ClCompile><LanguageStandard>stdcpp17</LanguageStandard><ExceptionHandling>Sync</ExceptionHandling><WarningLevel>Level4</WarningLevel><PreprocessorDefinitions>NOMINMAX;UNICODE;_UNICODE;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
-  <Link><AdditionalDependencies>IddCxStub.lib;d3d11.lib;dxgi.lib;avrt.lib;%(AdditionalDependencies)</AdditionalDependencies><EntryPointSymbol>FxDriverEntry</EntryPointSymbol></Link>
+  <Link><AdditionalDependencies>IddCxStub.lib;d3d11.lib;dxgi.lib;avrt.lib;%(AdditionalDependencies)</AdditionalDependencies></Link>
   <DriverSign><FileDigestAlgorithm>sha256</FileDigestAlgorithm></DriverSign>
  </ItemDefinitionGroup>
  <ItemGroup><ClCompile Include="Driver.cpp"/><ClInclude Include="Shared.h"/><Inf Include="SidecarDOS.inf"/></ItemGroup>

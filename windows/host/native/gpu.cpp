@@ -18,7 +18,9 @@
 #include <stdexcept>
 using Microsoft::WRL::ComPtr;
 namespace {
-void check(HRESULT hr) { if (FAILED(hr)) throw hr; }
+thread_local char errorText[768]{};
+void checked(HRESULT hr,const char* expression,int line) { if(FAILED(hr)){sprintf_s(errorText,"%s (line %d): HRESULT 0x%08lx",expression,line,static_cast<unsigned long>(hr));throw hr;} }
+#define check(expression) checked((expression),#expression,__LINE__)
 struct Handle {
  HANDLE value=nullptr;
  ~Handle(){if(value)CloseHandle(value);}
@@ -148,7 +150,7 @@ struct Encoder {
    }
    list[i]->Release();
   }
-  CoTaskMemFree(list);check(result);
+  CoTaskMemFree(list);if(FAILED(result))throw result;
  }
  void pump(){
   for(UINT i=0;i<32;i++){
@@ -226,3 +228,36 @@ extern "C" int32_t sd_gpu_poll(void* p,uint8_t* bytes,uint32_t capacity,NativeOu
   memcpy(bytes,data,length);check(buffer->Unlock());out->size=length;return S_OK;
  }catch(HRESULT hr){return hr;}catch(...){return E_FAIL;}
 }
+
+extern "C" int32_t sd_gpu_self_test(){
+ try{
+  ComPtr<IDXGIFactory4> factory;check(CreateDXGIFactory1(IID_PPV_ARGS(&factory)));
+  ComPtr<IDXGIAdapter1> adapter;check(factory->EnumAdapters1(0,&adapter));
+  DXGI_ADAPTER_DESC1 desc{};check(adapter->GetDesc1(&desc));
+  GUID guid;check(CoCreateGuid(&guid));wchar_t name[80]{};
+  swprintf_s(name,L"Global\\SidecarDOS.Test.%08x%04x%04x",guid.Data1,guid.Data2,guid.Data3);
+  Encoder e;e.init(desc.AdapterLuid.LowPart,desc.AdapterLuid.HighPart,1280,720,60,6000000,name);
+  e.set(CODECAPI_AVEncVideoForceKeyFrame,1);
+  std::vector<uint8_t> output(2*1024*1024);NativeOutput meta{};
+  for(uint64_t i=1;i<=180;i++){
+   auto slot=static_cast<UINT>(i%3);
+   HRESULT acquired=e.mutexes[slot]->AcquireSync(0,0);
+   if(acquired==S_OK){
+    ComPtr<ID3D11RenderTargetView> view;check(e.device->CreateRenderTargetView(e.shared[slot].Get(),nullptr,&view));
+    const float color[]{static_cast<float>(i%60)/60.0f,0.2f,0.4f,1.0f};
+    e.context->ClearRenderTargetView(view.Get(),color);e.context->Flush();check(e.mutexes[slot]->ReleaseSync(1));
+    check(e.input(slot,i,i*16667));
+   }
+   Sleep(10);
+   HRESULT hr=sd_gpu_poll(&e,output.data(),static_cast<uint32_t>(output.size()),&meta);check(hr);
+   if(hr==S_OK&&meta.size>0){
+    for(size_t j=0;j+4<meta.size;j++){
+     if(output[j]==0&&output[j+1]==0&&output[j+2]==1&&(output[j+3]&31)==5)return S_OK;
+    }
+   }
+  }
+  return HRESULT_FROM_WIN32(ERROR_TIMEOUT);
+ }catch(HRESULT hr){return hr;}catch(...){return E_FAIL;}
+}
+
+extern "C" const char* sd_gpu_error(){return errorText;}

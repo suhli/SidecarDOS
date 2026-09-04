@@ -36,6 +36,7 @@ Needs=WUDFRD.NT.HW
 AddReg=Hardware
 
 [Hardware]
+HKR,,Exclusive,0x00010001,1
 HKR,,UpperFilters,%REG_MULTI_SZ%,"IndirectKmd"
 HKR,"WUDF","DeviceGroupId",0x00000000,"SidecarDOS"
 HKR,,Security,0x00000000,"D:P(A;;GA;;;SY)(A;;GA;;;BA)(A;;GRGW;;;IU)"

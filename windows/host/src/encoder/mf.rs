@@ -9,6 +9,7 @@ struct NativeOutput {
     size: u32,
 }
 unsafe extern "C" {
+    fn sd_gpu_error()->*const std::ffi::c_char;
     fn sd_gpu_create(
         low: u32,
         high: i32,
@@ -28,7 +29,7 @@ unsafe extern "C" {
 }
 fn checked(code: i32, op: &str) -> Result<i32> {
     if code < 0 {
-        bail!("{op}: HRESULT 0x{:08x}", code as u32)
+        bail!("{op}: HRESULT 0x{:08x}: {}", code as u32, unsafe {std::ffi::CStr::from_ptr(sd_gpu_error())}.to_string_lossy())
     }
     Ok(code)
 }
@@ -155,4 +156,8 @@ impl Drop for MfEncoder {
             sd_gpu_destroy(self.handle.as_ptr());
         }
     }
+}
+
+#[cfg(test)] mod tests { unsafe extern "C" { fn sd_gpu_self_test()->i32; }
+#[test] #[ignore = "requires a physical GPU and a hardware H.264 MFT"] fn hardware_encoder_produces_idr() { let hr=unsafe{sd_gpu_self_test()};assert!(super::checked(hr,"hardware self-test").is_ok(),"{:?}",super::checked(hr,"hardware self-test")); }
 }
