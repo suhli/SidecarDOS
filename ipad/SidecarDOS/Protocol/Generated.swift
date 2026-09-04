@@ -6,6 +6,7 @@ struct Handshake: Sendable {
     var minor: UInt8
     var clientId: Data
     var name: String
+    var trusted: UInt8
 }
 extension Handshake: WireMessage {
     static let kind: UInt16 = 1
@@ -15,6 +16,7 @@ extension Handshake: WireMessage {
         w.u8(self.minor)
         w.bytes(self.clientId)
         w.string(self.name)
+        w.u8(self.trusted)
     }
     init(from r: inout WireReader) throws {
         minMajor = try r.u8()
@@ -22,6 +24,7 @@ extension Handshake: WireMessage {
         minor = try r.u8()
         clientId = try r.bytes()
         name = try r.string()
+        trusted = try r.u8()
     }
 }
 struct ProtocolVersion: Sendable {

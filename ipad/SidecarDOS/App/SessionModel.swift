@@ -27,6 +27,7 @@ import os
     private var nonce = Data(), pairKey = Data()
     private var generation: UInt32?
     private var lastSequence: UInt64 = 0
+    private var pairingNew = false
     private var configured = false, wantsConnection = false, foreground = true
     private var clockOffset: Double?
     private var bestRTT = Double.greatestFiniteMagnitude
@@ -39,7 +40,7 @@ import os
     private var previousLosses: UInt32 = 0, previousReceived: UInt32 = 0, previousMissing: UInt32 = 0
     private let log = Logger(subsystem: "dev.sidecardos", category: "session")
     init() {
-        do { renderer = try DisplayRenderer(); clientID = try TrustStore.identity() }
+        do { clientID = try TrustStore.identity(); renderer = try DisplayRenderer() }
         catch { renderer = nil; message = "Initialization failed: \(error)"; state = .failed }
         transport.onReady = { [weak self] in self?.ready() }
         transport.onPacket = { [weak self] packet in try self?.packet(packet) }
@@ -74,7 +75,7 @@ import os
         }
     }
     private func ready() {
-        do { try transport.send(Handshake(minMajor: 1, maxMajor: 1, minor: 0, clientId: clientID, name: UIDevice.current.name)) }
+        do { try transport.send(Handshake(minMajor: 1, maxMajor: 1, minor: 0, clientId: clientID, name: UIDevice.current.name, trusted: trusted == nil ? 0 : 1)) }
         catch { failed(error) }
     }
     func pair(code: String) {
@@ -105,17 +106,17 @@ import os
             guard pair.nonce.count == 32 else { throw WireError.malformed }
             switch pair.phase {
             case 0:
-                guard trusted == nil else { throw TrustError.invalidProof }
+                pairingNew = true
                 nonce = pair.nonce; state = .pairing
                 message = "Enter the one-time pairing code shown on \(pcName)."
             case 1:
                 guard let trusted, trusted.hostID == hostID else { throw TrustError.invalidProof }
-                nonce = pair.nonce; pairKey = trusted.secret; try sendProof()
+                pairingNew = false; nonce = pair.nonce; pairKey = trusted.secret; try sendProof()
             case 3:
                 guard pair.nonce == nonce, let host,
                       TrustStore.verify(pair.proof, key: pairKey, certificate: transport.certificate, client: clientID, nonce: nonce, role: 2)
                 else { throw TrustError.invalidProof }
-                if trusted == nil {
+                if pairingNew {
                     guard pair.secret.count == 32 else { throw TrustError.invalidProof }
                     let saved = TrustedHost(certificateHash: Data(SHA256.hash(data: transport.certificate)), secret: pair.secret, hostID: hostID)
                     try TrustStore.save(host.id, saved); trusted = saved
@@ -236,7 +237,7 @@ import os
     func sceneActive(_ active: Bool) {
         foreground = active
         if active {
-            if wantsConnection { reconnectAttempt = 0; open() }
+            if wantsConnection, state != .streaming, state != .connecting, state != .pairing { reconnectAttempt = 0; open() }
         } else {
             reconnectTask?.cancel(); timeoutTask?.cancel(); timer?.invalidate()
             transport.close(); decoder.reset(); renderer?.reset(); UIApplication.shared.isIdleTimerDisabled = false
@@ -244,6 +245,7 @@ import os
         }
     }
     private func failed(_ error: Error) {
+        if !wantsConnection {transport.close(); state = .idle; return}
         log.error("Session stopped: \(String(describing: error), privacy: .public)")
         transport.close(); decoder.reset(); renderer?.reset(); timer?.invalidate(); timeoutTask?.cancel()
         UIApplication.shared.isIdleTimerDisabled = false
@@ -261,7 +263,7 @@ import os
     func disconnect() {
         wantsConnection = false; reconnectTask?.cancel(); timeoutTask?.cancel(); timer?.invalidate()
         if state == .streaming { try? transport.send(SessionStop(reason: 0)) }
-        transport.close(); decoder.reset(); renderer?.reset(); state = .idle
+        transport.closeGracefully(); decoder.reset(); renderer?.reset(); state = .idle
         UIApplication.shared.isIdleTimerDisabled = false
     }
     func forgetHost() { if let host { TrustStore.forget(host.id) }; disconnect(); trusted = nil }

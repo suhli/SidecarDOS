@@ -7,7 +7,7 @@ pub use driver::*;
 
 pub fn modes(c: &DisplayCapabilities, fps: u32) -> Result<Vec<DisplayMode>> {
     ensure!(
-        (320..=4096).contains(&c.physical_width) && (320..=4096).contains(&c.physical_height),
+        (320..=4094).contains(&c.physical_width) && (320..=4094).contains(&c.physical_height),
         "unsupported iPad dimensions"
     );
     ensure!(
@@ -22,7 +22,7 @@ pub fn modes(c: &DisplayCapabilities, fps: u32) -> Result<Vec<DisplayMode>> {
     let w = c.physical_width;
     let h = c.physical_height;
     let mut sizes = vec![];
-    for max_edge in [1280, 1600, 1920, w.max(h)] {
+    for max_edge in [1280, 1920, w.max(h)] {
         let scale = (max_edge as f64 / w.max(h) as f64).min(1.0);
         let pair = (
             ((w as f64 * scale) as u32) & !1,
@@ -32,6 +32,16 @@ pub fn modes(c: &DisplayCapabilities, fps: u32) -> Result<Vec<DisplayMode>> {
             sizes.push(pair)
         }
     }
+    let full_hd = if w >= h { (1920, 1080) } else { (1080, 1920) };
+    if full_hd.0 <= w && full_hd.1 <= h && !sizes.contains(&full_hd) {
+        sizes.push(full_hd);
+    }
+    ensure!(
+        sizes
+            .iter()
+            .all(|&(w, h)| u64::from(w + 160) * u64::from(h + 30) * u64::from(fps) <= 655_350_000),
+        "display timing exceeds EDID clock limit"
+    );
     Ok(sizes
         .into_iter()
         .map(|(width, height)| DisplayMode {
@@ -45,7 +55,7 @@ pub fn modes(c: &DisplayCapabilities, fps: u32) -> Result<Vec<DisplayMode>> {
 pub fn preferred(modes: &[DisplayMode]) -> Option<&DisplayMode> {
     modes
         .iter()
-        .min_by_key(|m| (m.width.max(m.height) as i64 - 1920).abs())
+        .min_by_key(|m| (i64::from(m.width) * i64::from(m.height) - 1920 * 1080).abs())
 }
 #[cfg(test)]
 mod tests {

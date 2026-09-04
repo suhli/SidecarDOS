@@ -9,7 +9,7 @@ struct NativeOutput {
     size: u32,
 }
 unsafe extern "C" {
-    fn sd_gpu_error()->*const std::ffi::c_char;
+    fn sd_gpu_error() -> *const std::ffi::c_char;
     fn sd_gpu_create(
         low: u32,
         high: i32,
@@ -29,7 +29,11 @@ unsafe extern "C" {
 }
 fn checked(code: i32, op: &str) -> Result<i32> {
     if code < 0 {
-        bail!("{op}: HRESULT 0x{:08x}: {}", code as u32, unsafe {std::ffi::CStr::from_ptr(sd_gpu_error())}.to_string_lossy())
+        bail!(
+            "{op}: HRESULT 0x{:08x}: {}",
+            code as u32,
+            unsafe { std::ffi::CStr::from_ptr(sd_gpu_error()) }.to_string_lossy()
+        )
     }
     Ok(code)
 }
@@ -39,6 +43,7 @@ pub struct MfEncoder {
     settings: EncoderSettings,
     pub generation: u32,
     bytes: Vec<u8>,
+    parameters: super::h264::ParameterSets,
 }
 impl MfEncoder {
     pub fn open(
@@ -73,6 +78,7 @@ impl MfEncoder {
                 settings,
                 generation: s.generation,
                 bytes: vec![0; crate::protocol::MAX_FRAME],
+                parameters: super::h264::ParameterSets::default(),
             },
             std::array::from_fn(|i| format!("{prefix}.{i}")),
         ))
@@ -82,15 +88,15 @@ impl VideoEncoder for MfEncoder {
     fn configure(&mut self, s: EncoderSettings) -> Result<()> {
         self.reconfigure(s)
     }
-    fn encode(&mut self, slot: usize, m: Slot) -> Result<()> {
+    fn encode(&mut self, slot: usize, m: Slot) -> Result<bool> {
         ensure!(slot < 3, "invalid GPU slot");
-        unsafe {
+        let status = unsafe {
             checked(
                 sd_gpu_input(self.handle.as_ptr(), slot as u32, m.frame, m.capture_us),
                 "encode GPU surface",
-            )?;
-        }
-        Ok(())
+            )?
+        };
+        Ok(status == 0)
     }
     fn request_keyframe(&mut self) -> Result<()> {
         unsafe {
@@ -139,14 +145,15 @@ impl VideoEncoder for MfEncoder {
             o.size as usize <= self.bytes.len(),
             "encoder output overflow"
         );
+        let (data, keyframe) = self.parameters.prepare(&self.bytes[..o.size as usize])?;
         Ok(Some(VideoFrame {
             generation: self.generation,
             frame_id: o.frame,
             capture_timestamp: o.capture_us,
             encode_timestamp: crate::telemetry::now_us(),
             send_timestamp: 0,
-            keyframe: o.keyframe as u8,
-            data: self.bytes[..o.size as usize].to_vec(),
+            keyframe: u8::from(keyframe),
+            data,
         }))
     }
 }
@@ -158,6 +165,19 @@ impl Drop for MfEncoder {
     }
 }
 
-#[cfg(test)] mod tests { unsafe extern "C" { fn sd_gpu_self_test()->i32; }
-#[test] #[ignore = "requires a physical GPU and a hardware H.264 MFT"] fn hardware_encoder_produces_idr() { let hr=unsafe{sd_gpu_self_test()};assert!(super::checked(hr,"hardware self-test").is_ok(),"{:?}",super::checked(hr,"hardware self-test")); }
+#[cfg(test)]
+mod tests {
+    unsafe extern "C" {
+        fn sd_gpu_self_test() -> i32;
+    }
+    #[test]
+    #[ignore = "requires a physical GPU and a hardware H.264 MFT"]
+    fn hardware_encoder_produces_idr() {
+        let hr = unsafe { sd_gpu_self_test() };
+        assert!(
+            super::checked(hr, "hardware self-test").is_ok(),
+            "{:?}",
+            super::checked(hr, "hardware self-test")
+        );
+    }
 }

@@ -8,6 +8,7 @@
 #include <dxgi1_4.h>
 #include <wrl/client.h>
 #include <array>
+#include <atomic>
 #include <vector>
 #include <thread>
 #include <mutex>
@@ -41,28 +42,33 @@ uint64_t clockUs(){
  return static_cast<uint64_t>((q.QuadPart/f.QuadPart)*1000000+(q.QuadPart%f.QuadPart)*1000000/f.QuadPart);
 }
 struct Worker {
- Device& owner;IDDCX_SWAPCHAIN chain;LUID luid;HANDLE available;
+ Device& owner;IDDCX_MONITOR monitor;IDDCX_SWAPCHAIN chain;LUID luid;HANDLE available;
  HANDLE stop=CreateEventW(nullptr,TRUE,FALSE,nullptr);
  std::thread thread;
- Worker(Device& d,IDDCX_SWAPCHAIN c,LUID l,HANDLE a);
+ Worker(Device& d,IDDCX_MONITOR m,IDDCX_SWAPCHAIN c,LUID l,HANDLE a);
  ~Worker(){if(stop)SetEvent(stop);if(thread.joinable())thread.join();if(stop)CloseHandle(stop);}
  void run() noexcept;
 };
 struct Device {
  WDFDEVICE wdf=nullptr;IDDCX_ADAPTER adapter=nullptr;IDDCX_MONITOR monitor=nullptr;
- std::mutex mutex;std::unique_ptr<Worker> worker;
+ std::mutex mutex,requests;std::unique_ptr<Worker> worker;
  std::vector<SdMode> modes;
  std::array<uint8_t,128> edid{};
  SdStatus status{SD_ABI};SdSurfaces surfaces{};UINT surfaceRevision=0;
- bool ready=false;
+ std::atomic<bool> ready{false};
  HANDLE wake=CreateEventW(nullptr,FALSE,FALSE,nullptr);
  ~Device(){if(wake)CloseHandle(wake);}
+ void stopWorker(IDDCX_MONITOR expected=nullptr){
+  std::unique_ptr<Worker> old;
+  {std::lock_guard<std::mutex> guard(mutex);if(worker&&(!expected||worker->monitor==expected))old=std::move(worker);}
+  old.reset();
+ }
  void depart(){
   // IddCx may invoke Unassign synchronously: never hold mutex while notifying it.
   IDDCX_MONITOR old=nullptr;
   {std::lock_guard<std::mutex> guard(mutex);old=monitor;monitor=nullptr;}
   if(old)IddCxMonitorDeparture(old);
-  worker.reset();
+  stopWorker(old);
   std::lock_guard<std::mutex> guard(mutex);
   ++status.generation;status.width=status.height=0;for(auto& s:status.slots)s={};surfaces={};
  }
@@ -84,8 +90,9 @@ struct Device {
  NTSTATUS arrive(const SdStart& start){
   if(!ready||!adapter)return NotReady;
   if(start.abi!=SD_ABI||start.count<1||start.count>SD_MODES)return Invalid;
-  for(UINT i=0;i<start.count;i++){const auto& m=start.modes[i];if(m.width<320||m.height<320||m.width>4094||m.height>4094||(m.width&1)||(m.height&1)||m.fps<30||m.fps>60)return Invalid;}
-  depart();status.fps=start.modes[0].fps;modes.assign(start.modes,start.modes+start.count);makeEdid(start);
+  for(UINT i=0;i<start.count;i++){const auto& m=start.modes[i];if(m.width<320||m.height<320||m.width>4094||m.height>4094||(m.width&1)||(m.height&1)||m.fps<30||m.fps>60||static_cast<uint64_t>(m.width+160)*(m.height+30)*m.fps>655350000)return Invalid;}
+  depart();
+  {std::lock_guard<std::mutex> guard(mutex);status.fps=start.modes[0].fps;modes.assign(start.modes,start.modes+start.count);makeEdid(start);}
   IDDCX_MONITOR_INFO info{};info.Size=sizeof(info);info.MonitorType=DISPLAYCONFIG_OUTPUT_TECHNOLOGY_INDIRECT_WIRED;
   info.ConnectorIndex=0;info.MonitorContainerId=start.identity;
   info.MonitorDescription.Size=sizeof(IDDCX_MONITOR_DESCRIPTION);info.MonitorDescription.Type=IDDCX_MONITOR_DESCRIPTION_TYPE_EDID;
@@ -100,8 +107,8 @@ struct Device {
   return result;
  }
 };
-Worker::Worker(Device& d,IDDCX_SWAPCHAIN c,LUID l,HANDLE a):owner(d),chain(c),luid(l),available(a){
- if(!stop)throw std::bad_alloc();thread=std::thread([this]{run();});
+Worker::Worker(Device& d,IDDCX_MONITOR m,IDDCX_SWAPCHAIN c,LUID l,HANDLE a):owner(d),monitor(m),chain(c),luid(l),available(a){
+ if(!stop)throw std::bad_alloc();try{thread=std::thread([this]{run();});}catch(...){CloseHandle(stop);stop=nullptr;throw;}
 }
 void Worker::run() noexcept {
  auto body=[&](){
@@ -117,6 +124,7 @@ void Worker::run() noexcept {
   UINT localRevision=0;uint64_t frame=0;
   ComPtr<ID3D11Texture2D> latest;
   while(WaitForSingleObject(stop,0)==WAIT_TIMEOUT){
+   if(FAILED(device->GetDeviceRemovedReason()))break;
    IDARG_OUT_RELEASEANDACQUIREBUFFER out{};
    HRESULT hr=IddCxSwapChainReleaseAndAcquireBuffer(chain,&out);
    bool fresh=SUCCEEDED(hr);
@@ -129,7 +137,7 @@ void Worker::run() noexcept {
     if(!latest)continue;
    }else if(FAILED(hr))break;
    ComPtr<IDXGIResource> surface;
-   if(fresh){surface.Attach(out.MetaData.pSurface);if(FAILED(surface.As(&latest)))break;}
+   if(fresh){surface.Attach(out.MetaData.pSurface);latest.Reset();if(FAILED(surface.As(&latest)))break;}
    ComPtr<ID3D11Texture2D> texture=latest;
    D3D11_TEXTURE2D_DESC desc{};texture->GetDesc(&desc);
    const uint64_t capture=clockUs();++frame;
@@ -180,7 +188,13 @@ IDDCX_MONITOR_MODE monitorMode(const SdMode& m){IDDCX_MONITOR_MODE out{};out.Siz
 NTSTATUS AdapterReady(IDDCX_ADAPTER a,const IDARG_IN_ADAPTER_INIT_FINISHED* in){
  auto* d=WdfObjectGet_Context(a)->device;d->ready=in->AdapterInitStatus>=0;return Success;
 }
-NTSTATUS Commit(IDDCX_ADAPTER,const IDARG_IN_COMMITMODES*){return Success;}
+NTSTATUS Commit(IDDCX_ADAPTER adapter,const IDARG_IN_COMMITMODES* in){
+ auto* d=WdfObjectGet_Context(adapter)->device;std::lock_guard<std::mutex> guard(d->mutex);
+ for(UINT i=0;i<in->PathCount;i++){const auto& p=in->pPaths[i];if(p.MonitorObject==d->monitor && p.TargetVideoSignalInfo.vSyncFreq.Denominator){
+ UINT fps=p.TargetVideoSignalInfo.vSyncFreq.Numerator/p.TargetVideoSignalInfo.vSyncFreq.Denominator;
+ if(fps>=30&&fps<=60&&fps!=d->status.fps){d->status.fps=fps;++d->status.generation;d->surfaces={};if(d->wake)SetEvent(d->wake);}
+ }}return Success;
+}
 NTSTATUS Parse(const IDARG_IN_PARSEMONITORDESCRIPTION* in,IDARG_OUT_PARSEMONITORDESCRIPTION* out){
  if(in->MonitorDescription.DataSize!=128)return Invalid;
  const auto* edid=static_cast<const uint8_t*>(in->MonitorDescription.pData);std::vector<SdMode> modes;
@@ -202,21 +216,23 @@ NTSTATUS DefaultModes(IDDCX_MONITOR,const IDARG_IN_GETDEFAULTDESCRIPTIONMODES*,I
  out->DefaultMonitorModeBufferOutputCount=0;return Success;
 }
 NTSTATUS TargetModes(IDDCX_MONITOR m,const IDARG_IN_QUERYTARGETMODES* in,IDARG_OUT_QUERYTARGETMODES* out){
- auto* d=WdfObjectGet_Context(m)->device;out->TargetModeBufferOutputCount=static_cast<UINT>(d->modes.size());
+ auto* d=WdfObjectGet_Context(m)->device;std::lock_guard<std::mutex> guard(d->mutex);out->TargetModeBufferOutputCount=static_cast<UINT>(d->modes.size());
  if(!in->TargetModeBufferInputCount)return Success;
  if(in->TargetModeBufferInputCount<d->modes.size())return static_cast<NTSTATUS>(0xc0000023);
  for(size_t i=0;i<d->modes.size();i++){auto& o=in->pTargetModes[i];o={};o.Size=sizeof(o);o.TargetVideoSignalInfo.targetVideoSignalInfo=signal(d->modes[i],false);}
  return Success;
 }
 NTSTATUS Assign(IDDCX_MONITOR m,const IDARG_IN_SETSWAPCHAIN* in){
- auto* d=WdfObjectGet_Context(m)->device;d->worker.reset();
+ auto* d=WdfObjectGet_Context(m)->device;d->stopWorker(m);
  {std::lock_guard<std::mutex> guard(d->mutex);++d->status.generation;d->status.width=d->status.height=0;d->surfaces={};for(auto& s:d->status.slots)s={};}
- try{d->worker=std::make_unique<Worker>(*d,in->hSwapChain,in->RenderAdapterLuid,in->hNextSurfaceAvailable);}catch(...){WdfObjectDelete(in->hSwapChain);return static_cast<NTSTATUS>(0xc000009a);}
+ try{auto next=std::make_unique<Worker>(*d,m,in->hSwapChain,in->RenderAdapterLuid,in->hNextSurfaceAvailable);
+  {std::lock_guard<std::mutex> guard(d->mutex);if(d->monitor==m)d->worker.swap(next);}
+ }catch(...){WdfObjectDelete(in->hSwapChain);return static_cast<NTSTATUS>(0xc000009a);}
  return Success;
 }
-NTSTATUS Unassign(IDDCX_MONITOR m){auto* d=WdfObjectGet_Context(m)->device;d->worker.reset();return Success;}
+NTSTATUS Unassign(IDDCX_MONITOR m){auto* d=WdfObjectGet_Context(m)->device;d->stopWorker(m);return Success;}
 void IoControl(WDFDEVICE device,WDFREQUEST request,size_t outSize,size_t inSize,ULONG code){
- auto* d=WdfObjectGet_Context(device)->device;NTSTATUS result=Invalid;ULONG_PTR bytes=0;
+ auto* d=WdfObjectGet_Context(device)->device;std::lock_guard<std::mutex> requestGuard(d->requests);NTSTATUS result=Invalid;ULONG_PTR bytes=0;
  try {
   if(code==SD_START&&inSize==sizeof(SdStart)){
    SdStart* in=nullptr;result=WdfRequestRetrieveInputBuffer(request,sizeof(SdStart),reinterpret_cast<void**>(&in),nullptr);
@@ -237,7 +253,7 @@ void IoControl(WDFDEVICE device,WDFREQUEST request,size_t outSize,size_t inSize,
  }catch(...){result=static_cast<NTSTATUS>(0xc000009a);}
  WdfRequestCompleteWithInformation(request,result,bytes);
 }
-void FileCleanup(WDFFILEOBJECT f){WdfObjectGet_Context(WdfFileObjectGetDevice(f))->device->depart();}
+void FileCleanup(WDFFILEOBJECT f){auto* d=WdfObjectGet_Context(WdfFileObjectGetDevice(f))->device;std::lock_guard<std::mutex> guard(d->requests);d->depart();}
 void Cleanup(WDFOBJECT obj){auto* c=WdfObjectGet_Context(obj);if(c->device){c->device->depart();delete c->device;c->device=nullptr;}}
 NTSTATUS EnterD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){
  auto* d=WdfObjectGet_Context(device)->device;
@@ -253,7 +269,7 @@ NTSTATUS EnterD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){
  IDARG_OUT_ADAPTER_INIT out{};NTSTATUS result=IddCxAdapterInitAsync(&in,&out);
  if(result>=0){d->adapter=out.AdapterObject;WdfObjectGet_Context(out.AdapterObject)->device=d;}return result;
 }
-NTSTATUS ExitD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){auto* d=WdfObjectGet_Context(device)->device;d->ready=false;d->depart();return Success;}
+NTSTATUS ExitD0(WDFDEVICE device,WDF_POWER_DEVICE_STATE){auto* d=WdfObjectGet_Context(device)->device;std::lock_guard<std::mutex> guard(d->requests);d->ready=false;d->depart();return Success;}
 NTSTATUS AddDevice(WDFDRIVER,PWDFDEVICE_INIT init){
  WDF_FILEOBJECT_CONFIG file;WDF_FILEOBJECT_CONFIG_INIT(&file,WDF_NO_EVENT_CALLBACK,WDF_NO_EVENT_CALLBACK,FileCleanup);
  WdfDeviceInitSetFileObjectConfig(init,&file,WDF_NO_OBJECT_ATTRIBUTES);
@@ -266,7 +282,6 @@ NTSTATUS AddDevice(WDFDRIVER,PWDFDEVICE_INIT init){
  config.EvtIddCxMonitorQueryTargetModes=TargetModes;config.EvtIddCxMonitorAssignSwapChain=Assign;config.EvtIddCxMonitorUnassignSwapChain=Unassign;
  NTSTATUS result=IddCxDeviceInitConfig(init,&config);if(result<0)return result;
  WDF_OBJECT_ATTRIBUTES attrs;WDF_OBJECT_ATTRIBUTES_INIT_CONTEXT_TYPE(&attrs,Context);attrs.EvtCleanupCallback=Cleanup;
- attrs.SynchronizationScope=WdfSynchronizationScopeDevice;
  WDFDEVICE device;result=WdfDeviceCreate(&init,&attrs,&device);if(result<0)return result;
  auto* c=WdfObjectGet_Context(device);c->device=new(std::nothrow)Device;if(!c->device)return static_cast<NTSTATUS>(0xc000009a);
  c->device->wdf=device;

@@ -1,5 +1,5 @@
 import Foundation
-struct ReceivedFrame {
+struct ReceivedFrame: Sendable {
     let video: VideoFrame
     let receiveTimestamp: UInt64
 }

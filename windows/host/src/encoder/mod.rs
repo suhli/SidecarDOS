@@ -9,7 +9,7 @@ pub struct EncoderSettings {
 }
 pub trait VideoEncoder {
     fn configure(&mut self, settings: EncoderSettings) -> Result<()>;
-    fn encode(&mut self, slot: usize, metadata: Slot) -> Result<()>;
+    fn encode(&mut self, slot: usize, metadata: Slot) -> Result<bool>;
     fn request_keyframe(&mut self) -> Result<()>;
     fn reconfigure(&mut self, settings: EncoderSettings) -> Result<()>;
     fn poll(&mut self) -> Result<Option<VideoFrame>>;
@@ -18,3 +18,5 @@ pub trait VideoEncoder {
 mod mf;
 #[cfg(windows)]
 pub use mf::*;
+
+pub mod h264;

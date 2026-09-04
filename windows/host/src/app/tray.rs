@@ -60,6 +60,7 @@ struct Tray {
     ui: Ui,
     actions: mpsc::Sender<Action>,
     last_pair: Option<String>,
+    pair_window: Option<HWND>,
     config_path: Vec<u16>,
 }
 fn wide(s: &str) -> Vec<u16> {
@@ -87,11 +88,14 @@ unsafe extern "system" fn procedure(
                 WM_TIMER => {
                     let pairing = t.ui.pair.lock().ok().and_then(|p| p.clone());
                     if pairing != t.last_pair {
+                        if let Some(old) = t.pair_window.take() {
+                            let _ = DestroyWindow(old);
+                        }
                         t.last_pair = pairing.clone();
                         if let Some(p) = pairing {
                             let text = wide(&p);
                             // Non-modal owned window avoids blocking network / tray event dispatch.
-                            let _ = CreateWindowExW(
+                            t.pair_window = CreateWindowExW(
                                 WS_EX_TOPMOST,
                                 w!("STATIC"),
                                 PCWSTR(text.as_ptr()),
@@ -104,7 +108,8 @@ unsafe extern "system" fn procedure(
                                 None,
                                 None,
                                 None,
-                            );
+                            )
+                            .ok();
                         }
                     }
                     if t.ui.exit.load(Ordering::Relaxed) {
@@ -205,6 +210,7 @@ pub fn run(ui: Ui, actions: mpsc::Sender<Action>, config_path: &std::path::Path)
             ui,
             actions,
             last_pair: None,
+            pair_window: None,
             config_path: wide(&format!("\"{}\"", config_path.display())),
         });
         let hwnd = CreateWindowExW(

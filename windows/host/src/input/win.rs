@@ -1,5 +1,5 @@
 use crate::{protocol::InputEvent, topology::Bounds};
-use anyhow::{Context, Result, ensure};
+use anyhow::{Result, ensure};
 use std::collections::{BTreeMap, BTreeSet};
 use windows::Win32::{
     Foundation::{POINT, RECT},
@@ -41,7 +41,13 @@ impl Injector {
     }
     fn touch(&mut self, e: &InputEvent) -> Result<()> {
         ensure!(e.contact_id < 10, "too many touch contacts");
-        let (x, y) = self.bounds.map(e.x, e.y)?;
+        let (mut x, mut y) = self.bounds.map(e.x, e.y)?;
+        if e.phase >= 2
+            && let Some(previous) = self.touches.get(&e.contact_id)
+        {
+            x = previous.pointerInfo.ptPixelLocation.x;
+            y = previous.pointerInfo.ptPixelLocation.y;
+        }
         if e.phase == 0 {
             ensure!(
                 !self.touches.contains_key(&e.contact_id),
@@ -189,7 +195,31 @@ impl Injector {
         })
     }
     fn keyboard(&mut self, e: &InputEvent) -> Result<()> {
-        let scan = super::scan_code(e.physical_key).context("unsupported physical key")?;
+        let Some(scan) = super::scan_code(e.physical_key) else {
+            return Ok(());
+        };
+        for (mask, left, right) in [
+            (1, 0x1d, 0x11d),
+            (2, 0x2a, 0x36),
+            (4, 0x38, 0x138),
+            (8, 0x15b, 0x15c),
+        ] {
+            if scan == left || scan == right {
+                continue;
+            }
+            if e.modifiers & mask != 0 {
+                if !self.keys.contains(&left) && !self.keys.contains(&right) {
+                    Self::key(left, false)?;
+                    self.keys.insert(left);
+                }
+            } else {
+                for code in [left, right] {
+                    if self.keys.remove(&code) {
+                        Self::key(code, true)?;
+                    }
+                }
+            }
+        }
         let up = e.phase >= 2;
         if up && !self.keys.contains(&scan) {
             return Ok(());

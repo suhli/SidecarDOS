@@ -167,8 +167,8 @@ struct Encoder {
  HRESULT input(UINT slot,uint64_t frame,uint64_t capture){
   if(slot>=3)return E_INVALIDARG;
   MutexLease lease;lease.mutex=mutexes[slot];HRESULT acquired=lease.mutex->AcquireSync(1,0);
-  if(acquired==WAIT_TIMEOUT)return S_FALSE;check(acquired);lease.owned=true;
-  pump();if(frame==0||!credits||pending.size()>=3)return S_FALSE;
+  if(acquired==WAIT_TIMEOUT)return S_FALSE;if(acquired!=S_OK)throw E_FAIL;lease.owned=true;
+  pump();if(frame==0||!credits||pending.size()>=3)return S_OK;
   D3D11_TEXTURE2D_DESC td{};td.Width=width;td.Height=height;td.MipLevels=1;td.ArraySize=1;td.Format=DXGI_FORMAT_NV12;
   td.SampleDesc.Count=1;td.BindFlags=D3D11_BIND_RENDER_TARGET;td.Usage=D3D11_USAGE_DEFAULT;
   ComPtr<ID3D11Texture2D> nv12;check(device->CreateTexture2D(&td,nullptr,&nv12));
@@ -237,9 +237,10 @@ extern "C" int32_t sd_gpu_self_test(){
   DXGI_ADAPTER_DESC1 desc{};check(adapter->GetDesc1(&desc));
   GUID guid;check(CoCreateGuid(&guid));wchar_t name[80]{};
   swprintf_s(name,L"Global\\SidecarDOS.Test.%08x%04x%04x",guid.Data1,guid.Data2,guid.Data3);
-  Encoder e;e.init(desc.AdapterLuid.LowPart,desc.AdapterLuid.HighPart,1280,720,60,6000000,name);
+  Encoder e;e.init(desc.AdapterLuid.LowPart,desc.AdapterLuid.HighPart,1920,1080,60,12000000,name);
   e.set(CODECAPI_AVEncVideoForceKeyFrame,1);
   std::vector<uint8_t> output(2*1024*1024);NativeOutput meta{};
+  uint64_t firstIdr=0;bool sawSps=false,sawPps=false;
   for(uint64_t i=1;i<=180;i++){
    auto slot=static_cast<UINT>(i%3);
    HRESULT acquired=e.mutexes[slot]->AcquireSync(0,0);
@@ -253,7 +254,12 @@ extern "C" int32_t sd_gpu_self_test(){
    HRESULT hr=sd_gpu_poll(&e,output.data(),static_cast<uint32_t>(output.size()),&meta);check(hr);
    if(hr==S_OK&&meta.size>0){
     for(size_t j=0;j+4<meta.size;j++){
-     if(output[j]==0&&output[j+1]==0&&output[j+2]==1&&(output[j+3]&31)==5)return S_OK;
+     if(output[j]==0&&output[j+1]==0&&output[j+2]==1){
+      const auto nal=output[j+3]&31;
+      if(nal==7)sawSps=true;if(nal==8)sawPps=true;
+      if(nal==5){if(firstIdr&&meta.frame>firstIdr&&sawSps&&sawPps)return S_OK;
+       firstIdr=meta.frame;e.set(CODECAPI_AVEncCommonMeanBitRate,6000000);e.set(CODECAPI_AVEncVideoForceKeyFrame,1);}
+     }
     }
    }
   }

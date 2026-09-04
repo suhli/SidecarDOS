@@ -14,7 +14,7 @@ $include=@("/I$wdk\Include\wdf\umdf\2.25","/I$wdk\Include\10.0.26100.0\um\iddcx\
 $defines=@('/DUMDF_VERSION_MAJOR=2','/DUMDF_VERSION_MINOR=25','/DUMDF_USING_NTSTATUS','/DUNICODE','/D_UNICODE','/DNOMINMAX','/DIDDCX_VERSION_MAJOR=1','/DIDDCX_VERSION_MINOR=2')
 & cl.exe /nologo /std:c++17 /EHsc /W4 /WX /MD /O2 @defines @include /c (Join-Path $PSScriptRoot 'Driver.cpp') "/Fo$out\Driver.obj"
 if($LASTEXITCODE -ne 0){throw 'Driver compilation failed'}
-& link.exe /nologo /DLL "/OUT:$out\SidecarDOS.dll" "$out\Driver.obj" "$wdk\Lib\wdf\umdf\x64\2.25\WdfDriverStubUm.lib" "$wdk\Lib\10.0.26100.0\um\x64\iddcx\1.2\IddCxStub.lib" d3d11.lib dxgi.lib kernel32.lib user32.lib advapi32.lib ntdll.lib
+& link.exe /nologo /DLL /SUBSYSTEM:WINDOWS "/OUT:$out\SidecarDOS.dll" "$out\Driver.obj" "$wdk\Lib\wdf\umdf\x64\2.25\WdfDriverStubUm.lib" "$wdk\Lib\10.0.26100.0\um\x64\iddcx\1.2\IddCxStub.lib" d3d11.lib dxgi.lib kernel32.lib user32.lib advapi32.lib ntdll.lib
 if($LASTEXITCODE -ne 0){throw 'Driver linking failed'}
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'SidecarDOS.inf') -Destination $out
 & "$wdk\tools\10.0.26100.0\x64\infverif.exe" /w "$out\SidecarDOS.inf"

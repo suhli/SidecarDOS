@@ -20,7 +20,8 @@ import MetalKit
         scroll.allowedScrollTypesMask = .all; scroll.allowedTouchTypes = []; scroll.cancelsTouchesInView = false
         addGestureRecognizer(scroll)
     }
-    required init(coder: NSCoder) { fatalError("InputView is constructed programmatically") }
+    @available(*, unavailable)
+    required init?(coder: NSCoder) { return nil }
     private func normalized(_ point: CGPoint, clamp: Bool = false) -> CGPoint? {
         let rect = DisplayRenderer.rect(container: bounds.size, video: videoSize)
         guard rect.width > 0, rect.height > 0, clamp || rect.contains(point) else { return nil }

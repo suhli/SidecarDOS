@@ -7,6 +7,7 @@ pub struct Handshake {
     pub minor: u8,
     pub client_id: Vec<u8>,
     pub name: String,
+    pub trusted: u8,
 }
 impl Wire for Handshake {
     const KIND: u16 = 1;
@@ -16,6 +17,7 @@ impl Wire for Handshake {
         w.u8(self.minor);
         w.bytes(&self.client_id);
         w.string(&self.name);
+        w.u8(self.trusted);
     }
     fn read(r: &mut Reader<'_>) -> Result<Self> { Ok(Self {
         min_major: r.u8()?,
@@ -23,6 +25,7 @@ impl Wire for Handshake {
         minor: r.u8()?,
         client_id: r.bytes()?,
         name: r.string()?,
+        trusted: r.u8()?,
     }) }
 }
 #[derive(Debug, Clone, PartialEq)]

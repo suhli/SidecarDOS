@@ -90,7 +90,9 @@ impl Pipeline {
                             if driver.is_none() {
                                 driver = Some(display::Driver::open()?);
                             }
-                            if matches!(state, SessionState::Idle) || modes != previous_modes {
+                            let replace_monitor =
+                                matches!(state, SessionState::Idle) || modes != previous_modes;
+                            if replace_monitor {
                                 driver
                                     .as_ref()
                                     .context("driver missing")?
@@ -98,7 +100,11 @@ impl Pipeline {
                             }
                             let m = modes.first().context("no display modes")?;
                             previous_modes = modes.clone();
-                            mode_request = Some((m.width, m.height, m.fps));
+                            mode_request = if replace_monitor {
+                                Some((m.width, m.height, m.fps))
+                            } else {
+                                None
+                            };
                             state = SessionState::Streaming { device };
                             encoder = None;
                             input = None;
@@ -270,8 +276,9 @@ impl Pipeline {
                             if Some(i) != newest {
                                 metadata.frame = 0;
                             }
-                            e.encode(i, metadata)?;
-                            seen[i] = s.frame;
+                            if e.encode(i, metadata)? {
+                                seen[i] = s.frame;
+                            }
                         }
                     }
                     Ok(true)
@@ -343,7 +350,12 @@ async fn authenticate(
             name: std::env::var("COMPUTERNAME").unwrap_or_else(|_| "Windows PC".into()),
         })
         .await?;
-    let trusted = identity.trusted(&id)?;
+    ensure!(hello.trusted <= 1, "invalid pairing state");
+    let trusted = if hello.trusted == 1 {
+        identity.trusted(&id)?
+    } else {
+        None
+    };
     let is_new = trusted.is_none();
     let key = trusted.unwrap_or_else(|| pairing::random::<16>().to_vec());
     let nonce = pairing::random::<32>();
@@ -477,7 +489,7 @@ async fn session(
     Statistics::KIND=>{
      let s=p.message::<Statistics>()?;ensure!(s.loss_ppm<=1_000_000&&s.fps>=0.&&s.fps<=240.,"invalid statistics");
      tracing::debug!(target:"network",fps=s.fps,rtt_us=s.rtt_us,loss_ppm=s.loss_ppm,decode_us=s.decode_us,render_us=s.render_us,latency_us=s.estimated_latency_us,"client statistics");
-     if config.video.adaptive{if let Some(rate)=abr.update(&s,Instant::now()){pipeline.bitrate.store(rate,Ordering::Relaxed);}}
+     if config.video.adaptive && let Some(rate)=abr.update(&s,Instant::now()){pipeline.bitrate.store(rate,Ordering::Relaxed);}
     }
     Ping::KIND=>{let ping=p.message::<Ping>()?;sequence+=1;let pong=Pong{client_timestamp:ping.client_timestamp,host_receive:telemetry::now_us(),host_send:telemetry::now_us()};network::write_packet(&mut control.send, &Packet::new(&pong,sequence,token)).await?;}
     _=>anyhow::bail!("unexpected session control message"),
@@ -496,7 +508,7 @@ async fn session(
    if let Some(f)=frame{
     if f.frame_id>last_id+1{pipeline.keyframe.store(true,Ordering::Relaxed);}
     last_id=f.frame_id;
-    if !c.send_frame(token,&f)?{pipeline.keyframe.store(true,Ordering::Relaxed);}
+    if !c.send_frame(token,&f).await?{pipeline.keyframe.store(true,Ordering::Relaxed);}
    }
   }
   e=pipeline.events.recv()=>match e.context("capture worker stopped")?{

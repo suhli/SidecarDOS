@@ -112,6 +112,12 @@ import CryptoKit
         })
     }
     private func fail(_ error: Error) { let handler = onFailure; close(); handler?(error) }
+    func closeGracefully() {
+        let epoch = self.epoch
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            guard let self, self.epoch == epoch else {return}; self.close()
+        }
+    }
     func close() {
         epoch += 1; control?.cancel(); input?.cancel(); datagrams?.cancel(); group?.cancel()
         control = nil; input = nil; datagrams = nil; group = nil

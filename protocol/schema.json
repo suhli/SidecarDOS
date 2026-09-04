@@ -1,7 +1,7 @@
 {
   "protocol": "SidecarDOS", "major": 1, "minor": 0,
   "messages": [
-    {"id":1,"name":"Handshake","fields":[["min_major","u8"],["max_major","u8"],["minor","u8"],["client_id","bytes"],["name","string"]]},
+    {"id":1,"name":"Handshake","fields":[["min_major","u8"],["max_major","u8"],["minor","u8"],["client_id","bytes"],["name","string"],["trusted","u8"]]},
     {"id":2,"name":"ProtocolVersion","fields":[["major","u8"],["minor","u8"]]},
     {"id":3,"name":"HostInfo","fields":[["host_id","bytes"],["name","string"]]},
     {"id":4,"name":"ClientInfo","fields":[["client_id","bytes"],["name","string"]]},

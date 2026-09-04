@@ -23,7 +23,7 @@ pub fn server(port: u16, cert: Vec<u8>, key: Vec<u8>) -> Result<Endpoint> {
         .max_idle_timeout(Some(Duration::from_secs(6).try_into()?))
         .keep_alive_interval(Some(Duration::from_secs(1)))
         .datagram_receive_buffer_size(Some(64 * 1024))
-        .datagram_send_buffer_size(MAX_FRAME + 256 * 1024)
+        .datagram_send_buffer_size(MAX_DATAGRAM * 4)
         .stream_receive_window((MAX_CONTROL as u32 * 2).into())
         .receive_window((MAX_CONTROL as u32 * 4).into());
     config.transport_config(Arc::new(transport));
@@ -74,10 +74,14 @@ pub async fn read_packet(stream: &mut RecvStream) -> Result<Packet> {
     Packet::decode(&data, MAX_CONTROL)
 }
 pub trait VideoTransport {
-    fn send_frame(&self, session: [u8; 16], frame: &VideoFrame) -> Result<bool>;
+    fn send_frame(
+        &self,
+        session: [u8; 16],
+        frame: &VideoFrame,
+    ) -> impl std::future::Future<Output = Result<bool>> + Send;
 }
 impl VideoTransport for Connection {
-    fn send_frame(&self, session: [u8; 16], f: &VideoFrame) -> Result<bool> {
+    async fn send_frame(&self, session: [u8; 16], f: &VideoFrame) -> Result<bool> {
         ensure!(f.data.len() <= MAX_FRAME, "encoded frame too large");
         let mtu = self
             .max_datagram_size()
@@ -88,10 +92,12 @@ impl VideoTransport for Connection {
         let chunk = (mtu - overhead).min(1100);
         let count = f.data.len().div_ceil(chunk);
         ensure!(count > 0 && count <= 4096, "invalid fragment count");
-        // Never evict an earlier P-frame silently; abort this frame and force IDR after congestion.
-        if self.datagram_send_buffer_space() < f.data.len() + count * overhead {
+        // Only four datagrams may wait inside QUIC. Abandon a frame after 35 ms;
+        // the receiver expires its incomplete frame, and the caller requests IDR.
+        if crate::telemetry::now_us().saturating_sub(f.capture_timestamp) > 80_000 {
             return Ok(false);
         }
+        let deadline = tokio::time::Instant::now() + Duration::from_millis(35);
         for (index, data) in f.data.chunks(chunk).enumerate() {
             let v = VideoFragment {
                 generation: f.generation,
@@ -105,7 +111,15 @@ impl VideoTransport for Connection {
                 total_bytes: f.data.len() as u32,
                 data: data.to_vec(),
             };
-            self.send_datagram(Packet::new(&v, 0, session).encode().into())?;
+            match tokio::time::timeout_at(
+                deadline,
+                self.send_datagram_wait(Packet::new(&v, 0, session).encode().into()),
+            )
+            .await
+            {
+                Ok(result) => result?,
+                Err(_) => return Ok(false),
+            }
         }
         Ok(true)
     }

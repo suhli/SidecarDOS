@@ -3,7 +3,8 @@ import VideoToolbox
 import CoreMedia
 import CoreVideo
 
-struct DecodedFrame {
+// Pixel buffers are retained, read-only after VideoToolbox completes, and only submitted to Metal.
+struct DecodedFrame: @unchecked Sendable {
     let pixelBuffer: CVPixelBuffer
     let received: ReceivedFrame
     let decodeStart: UInt64
@@ -30,6 +31,7 @@ func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
             self.decoder = decoder; self.frame = frame; self.epoch = epoch; start = monotonicUS()
         }
     }
+    deinit { if let session { VTDecompressionSessionWaitForAsynchronousFrames(session); VTDecompressionSessionInvalidate(session) } }
     func reset() {
         epoch += 1
         if let session {
