@@ -1,0 +1,26 @@
+{
+  "protocol": "SidecarDOS", "major": 1, "minor": 0,
+  "messages": [
+    {"id":1,"name":"Handshake","fields":[["min_major","u8"],["max_major","u8"],["minor","u8"],["client_id","bytes"],["name","string"]]},
+    {"id":2,"name":"ProtocolVersion","fields":[["major","u8"],["minor","u8"]]},
+    {"id":3,"name":"HostInfo","fields":[["host_id","bytes"],["name","string"]]},
+    {"id":4,"name":"ClientInfo","fields":[["client_id","bytes"],["name","string"]]},
+    {"id":5,"name":"Pairing","fields":[["phase","u8"],["nonce","bytes"],["proof","bytes"],["secret","bytes"]]},
+    {"id":6,"name":"SessionStart","fields":[["width","u32"],["height","u32"],["fps","u32"]]},
+    {"id":7,"name":"SessionStop","fields":[["reason","u8"]]},
+    {"id":8,"name":"DisplayCapabilities","fields":[["physical_width","u32"],["physical_height","u32"],["logical_width","u32"],["logical_height","u32"],["max_fps","u32"],["native_scale","f32"],["safe_top","f32"],["safe_right","f32"],["safe_bottom","f32"],["safe_left","f32"],["orientation","u8"]]},
+    {"id":9,"name":"DisplayMode","fields":[["width","u32"],["height","u32"],["fps","u32"],["scale_percent","u32"]]},
+    {"id":10,"name":"DisplayModeChange","fields":[["width","u32"],["height","u32"],["fps","u32"]]},
+    {"id":11,"name":"EncoderCapabilities","fields":[["codecs","u32"],["hardware","u8"],["max_width","u32"],["max_height","u32"]]},
+    {"id":12,"name":"EncoderConfig","fields":[["codec","u8"],["bitrate","u32"],["fps","u32"],["preset","u8"]]},
+    {"id":13,"name":"VideoConfig","fields":[["generation","u32"],["codec","u8"],["width","u32"],["height","u32"],["fps","u32"],["bit_depth","u8"],["color_space","u8"],["parameter_sets","bytes"]]},
+    {"id":14,"name":"VideoFrame","fields":[["generation","u32"],["frame_id","u64"],["capture_timestamp","u64"],["encode_timestamp","u64"],["send_timestamp","u64"],["keyframe","u8"],["data","bytes"]]},
+    {"id":15,"name":"VideoFragment","fields":[["generation","u32"],["frame_id","u64"],["capture_timestamp","u64"],["encode_timestamp","u64"],["send_timestamp","u64"],["keyframe","u8"],["index","u16"],["count","u16"],["total_bytes","u32"],["data","bytes"]]},
+    {"id":16,"name":"KeyframeRequest","fields":[["reason","u8"]]},
+    {"id":17,"name":"InputEvent","fields":[["kind","u8"],["phase","u8"],["contact_id","u16"],["x","f32"],["y","f32"],["dx","f32"],["dy","f32"],["buttons","u32"],["physical_key","u16"],["logical_key","u32"],["modifiers","u16"],["is_repeat","u8"]]},
+    {"id":18,"name":"Ping","fields":[["client_timestamp","u64"]]},
+    {"id":19,"name":"Pong","fields":[["client_timestamp","u64"],["host_receive","u64"],["host_send","u64"]]},
+    {"id":20,"name":"Statistics","fields":[["fps","f32"],["bitrate","u32"],["rtt_us","u32"],["loss_ppm","u32"],["decode_queue","u16"],["dropped_frames","u32"],["received_bytes","u64"],["decode_us","u32"],["render_us","u32"],["estimated_latency_us","u32"]]},
+    {"id":21,"name":"ProtocolError","fields":[["code","u16"],["message","string"]]}
+  ]
+}

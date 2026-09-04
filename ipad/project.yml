@@ -1,0 +1,46 @@
+name: SidecarDOS
+options:
+  bundleIdPrefix: dev.sidecardos
+  deploymentTarget:
+    iOS: "17.0"
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    SWIFT_STRICT_CONCURRENCY: complete
+    TARGETED_DEVICE_FAMILY: "2"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+targets:
+  SidecarDOS:
+    type: application
+    platform: iOS
+    sources: [SidecarDOS]
+    info:
+      path: SidecarDOS/Info.plist
+      properties:
+        CFBundleDisplayName: SidecarDOS
+        UILaunchScreen: {}
+        NSLocalNetworkUsageDescription: SidecarDOS discovers and connects to your Windows PC on your local network.
+        NSBonjourServices: ["_sidecardos._udp"]
+        UISupportedInterfaceOrientations~ipad: [UIInterfaceOrientationPortrait, UIInterfaceOrientationPortraitUpsideDown, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.sidecardos.ipad
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        CODE_SIGN_STYLE: Automatic
+  SidecarDOSTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [SidecarDOSTests]
+    dependencies: [{target: SidecarDOS}]
+schemes:
+  SidecarDOS:
+    build:
+      targets:
+        SidecarDOS: all
+        SidecarDOSTests: [test]
+    test:
+      targets: [SidecarDOSTests]

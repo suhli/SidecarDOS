@@ -1,0 +1,15 @@
+/target/
+/build/
+/.vs/
+**/DerivedData/
+**/xcuserdata/
+*.pfx
+*.cer
+*.cat
+*.sys
+*.dll
+*.exe
+*.pdb
+*.user
+/ipad/SidecarDOS.xcodeproj/
+/.local/
