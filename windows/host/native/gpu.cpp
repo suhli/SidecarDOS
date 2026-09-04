@@ -96,7 +96,8 @@ struct Encoder {
   set(CODECAPI_AVEncCommonRateControlMode,eAVEncCommonRateControlMode_CBR);
   set(CODECAPI_AVEncCommonMeanBitRate,bitrate);
   flag(CODECAPI_AVLowLatencyMode,true);
-  set(CODECAPI_AVEncMPVDefaultBPictureCount,0);
+  // Baseline profile forbids B pictures even when this vendor-specific knob is unavailable.
+  set(CODECAPI_AVEncMPVDefaultBPictureCount,0,false);
   set(CODECAPI_AVEncMPVGOPSize,fps*2,false);
   set(CODECAPI_AVEncCommonRealTime,1,false);
   ComPtr<IMFMediaType> out;media(out,MFVideoFormat_H264);
