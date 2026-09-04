@@ -24,6 +24,7 @@ for (const m of schema.messages) {
 for (const [dest, content] of [['windows/host/src/protocol/generated.rs',rs],['ipad/SidecarDOS/Protocol/Generated.swift',sw]]) {
   const p = path.join(root,dest);
   if (process.argv.includes('--check')) {
-    if (!fs.existsSync(p) || fs.readFileSync(p,'utf8') !== content) throw new Error(`${dest} is stale`);
+    // Git may check out text as CRLF on Windows; only normalize line endings.
+    if (!fs.existsSync(p) || fs.readFileSync(p,'utf8').replace(/\r\n/g, '\n') !== content) throw new Error(`${dest} is stale`);
   } else { fs.mkdirSync(path.dirname(p),{recursive:true}); fs.writeFileSync(p,content); }
 }

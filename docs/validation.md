@@ -16,6 +16,7 @@ Development environment: Windows 11 x64, Rust stable 1.97.1, Visual Studio 2022 
 
 - Rust Host and native D3D11 / Media Foundation bridge compile and link.
 - Cargo formatting and strict Clippy checks.
+- Seven protocol-generator regression cases: fresh LF output, CRLF checkout without rewriting, real content drift, and missing generated files for both Rust and Swift.
 - Unit tests for malformed/truncated binary packets, finite numeric fields, version negotiation, replay rejection, certificate/nonce/direction binding of pairing proofs, capability-derived display modes, negative-coordinate mapping, bounded topology retries, grace reservation, physical key mapping and SPS/PPS repetition.
 - QUIC integration test with a real TLS connection over loopback, fragmented reliable control writes, separate response stream direction and video Datagram fragment reassembly.
 - Physical GPU self-test passed at a configured 1920×1080 / 60 FPS: creates shared GPU render targets, performs NV12 conversion, selects a hardware H.264 MFT, verifies SPS/PPS and IDR output, changes bitrate from 12 Mbps to 6 Mbps, requests another IDR and verifies it. Does not capture desktop contents or install a virtual display.
@@ -39,6 +40,13 @@ These checks were not executed here and remain necessary for acceptance:
 - Vendor matrix: NVIDIA / AMD / Intel. Enumeration supports all through official APIs, but one machine is not a vendor compatibility certification.
 
 The implementation and unsigned build outputs are provided for this integration work. The repository does not claim that the full wireless extended-display MVP has passed acceptance.
+
+## CI investigation on September 4, 2026
+
+[GitHub Actions run 33861481873](https://github.com/suhli/SidecarDOS/actions/runs/33861481873) failed in both jobs.
+
+- Host stopped at the generated-protocol check. The failure was reproduced locally by converting generated files to CRLF. The checker now normalizes CRLF only, generated outputs have LF Git attributes, and regression tests are part of CI and the Windows build script. The updated generator tests, protocol check, Rust formatting, Rust tests, strict Clippy and release build passed locally. This fix has not yet been verified in a new remote run.
+- The iPad job reached xcodebuild and exited with code 65. Detailed compiler diagnostics were not available in this environment, so its underlying failure remains unresolved.
 
 ## Current limitations
 

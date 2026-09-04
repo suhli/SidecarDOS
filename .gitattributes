@@ -1,0 +1,3 @@
+# Keep generated wire types identical across Windows and macOS checkouts.
+windows/host/src/protocol/generated.rs text eol=lf
+ipad/SidecarDOS/Protocol/Generated.swift text eol=lf

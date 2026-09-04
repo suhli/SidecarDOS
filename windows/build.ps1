@@ -3,6 +3,8 @@ param([ValidateSet('Debug','Release')][string]$Configuration = 'Release', [switc
 $ErrorActionPreference = 'Stop'
 Push-Location (Split-Path -Parent $PSScriptRoot)
 try {
+    & node --test protocol/generate.test.mjs
+    if ($LASTEXITCODE -ne 0) { throw 'Protocol generator tests failed' }
     & node protocol/generate.mjs --check
     if ($LASTEXITCODE -ne 0) { throw 'Generated protocol files are stale' }
     & cargo test --workspace --locked
