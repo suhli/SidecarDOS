@@ -144,6 +144,27 @@ impl Pipeline {
                                     && (30..=60).contains(&m.fps),
                                 "invalid mode request"
                             );
+                            ensure!(
+                                previous_modes
+                                    .iter()
+                                    .any(|mode| mode.width == m.width && mode.height == m.height),
+                                "requested mode was not advertised"
+                            );
+                            if previous_modes.iter().any(|mode| mode.fps != m.fps) {
+                                encoder = None;
+                                input = None;
+                                frame_tx.send_replace(None);
+                                for mode in &mut previous_modes {
+                                    mode.fps = m.fps;
+                                }
+                                if let SessionState::Streaming { device } = state {
+                                    driver
+                                        .as_ref()
+                                        .context("driver missing")?
+                                        .start(device, &previous_modes)?;
+                                }
+                                startup = Some(Instant::now());
+                            }
                             mode_request = Some((m.width, m.height, m.fps));
                             reconcile.changed(Instant::now());
                             key.store(true, Ordering::Relaxed);

@@ -10,7 +10,7 @@ The root device is exclusive. Its ACL permits System, administrators and the int
 
 ## Shared surfaces
 
-Host allocates three shared NT-handle D3D11 textures on the render-adapter LUID reported by the driver. Names contain a random 128-bit component and use the Global SidecarDOS namespace. Security permits the owning user, LocalService (UMDF) and System. These are GPU texture handles, not a CPU pixel mapping.
+Host allocates three shared NT-handle D3D11 textures on the render-adapter LUID reported by the driver. Names contain a random 128-bit component and use the Global SidecarDOS namespace. Security permits the owning user, LocalService, the UMDF restricted UserMode Drivers SID, and System. These are GPU texture handles, not a CPU pixel mapping.
 
 - Key 0 means the driver may write. Driver uses a zero-timeout AcquireSync; if no slot is free it drops the capture.
 - After GPU CopyResource / Flush, Driver releases key 1 and publishes frame ID / capture QPC timestamp under its metadata mutex.

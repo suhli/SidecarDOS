@@ -85,7 +85,7 @@ func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
             let job = Unmanaged.passRetained(Job(self, received, epoch: epoch))
             inFlight += 1
             let result = VTDecompressionSessionDecodeFrame(session, sampleBuffer: sample,
-                flags: [._EnableAsynchronousDecompression, ._1xRealTimePlayback],
+                flags: [._EnableAsynchronousDecompression],
                 frameRefcon: job.toOpaque(), infoFlagsOut: nil)
             if result != noErr {
                 inFlight -= 1; job.release(); try status(result)
