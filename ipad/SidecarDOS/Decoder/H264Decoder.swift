@@ -12,10 +12,21 @@ struct DecodedFrame: @unchecked Sendable {
 }
 func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
 
+// This non-actor owner has exclusive lifetime responsibility for the native session.
+// Only H264Decoder uses its value, on the main actor. Releasing the owner drains
+// callbacks before invalidation, so H264Decoder needs no deinit that reads isolated state.
+private final class DecompressionSessionOwner {
+    let value: VTDecompressionSession
+    init(_ value: VTDecompressionSession) { self.value = value }
+    deinit {
+        VTDecompressionSessionWaitForAsynchronousFrames(value)
+        VTDecompressionSessionInvalidate(value)
+    }
+}
 @MainActor final class H264Decoder {
     var onFrame: ((DecodedFrame) -> Void)?
     var onResetNeeded: (() -> Void)?
-    private var session: VTDecompressionSession?
+    private var session: DecompressionSessionOwner?
     private var format: CMVideoFormatDescription?
     private var sps = Data(), pps = Data()
     private var epoch: UInt64 = 0
@@ -31,13 +42,8 @@ func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
             self.decoder = decoder; self.frame = frame; self.epoch = epoch; start = monotonicUS()
         }
     }
-    deinit { if let session { VTDecompressionSessionWaitForAsynchronousFrames(session); VTDecompressionSessionInvalidate(session) } }
     func reset() {
         epoch += 1
-        if let session {
-            VTDecompressionSessionWaitForAsynchronousFrames(session)
-            VTDecompressionSessionInvalidate(session)
-        }
         session = nil; format = nil; sps = Data(); pps = Data()
         inFlight = 0; waitingForIDR = true
     }
@@ -57,7 +63,7 @@ func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
                 guard !sps.isEmpty, !pps.isEmpty, idr else { onResetNeeded?(); return }
                 try configure()
             }
-            guard let session, let format else { throw WireError.unexpected }
+            guard let session = session?.value, let format else { throw WireError.unexpected }
             var avcc = Data()
             for nal in nals {
                 var count = UInt32(nal.count).bigEndian
@@ -99,10 +105,6 @@ func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
         guard result == noErr else { throw NSError(domain: NSOSStatusErrorDomain, code: Int(result)) }
     }
     private func configure() throws {
-        if let session {
-            VTDecompressionSessionWaitForAsynchronousFrames(session)
-            VTDecompressionSessionInvalidate(session)
-        }
         epoch += 1; inFlight = 0; session = nil
         try sps.withUnsafeBytes { a in
             try pps.withUnsafeBytes { b in
@@ -139,10 +141,14 @@ func monotonicUS() -> UInt64 { DispatchTime.now().uptimeNanoseconds / 1000 }
             kCVPixelBufferPixelFormatTypeKey: kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange,
             kCVPixelBufferMetalCompatibilityKey: true,
             kCVPixelBufferIOSurfacePropertiesKey: [:]]
+        var nativeSession: VTDecompressionSession?
         try status(VTDecompressionSessionCreate(allocator: kCFAllocatorDefault, formatDescription: format,
             decoderSpecification: specification, imageBufferAttributes: attributes as CFDictionary,
-            outputCallback: &callback, decompressionSessionOut: &session))
-        if let session { try status(VTSessionSetProperty(session, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue)) }
+            outputCallback: &callback, decompressionSessionOut: &nativeSession))
+        guard let nativeSession else { throw WireError.unexpected }
+        let owner = DecompressionSessionOwner(nativeSession)
+        try status(VTSessionSetProperty(owner.value, key: kVTDecompressionPropertyKey_RealTime, value: kCFBooleanTrue))
+        session = owner
     }
     static func nals(_ data: Data) throws -> [Data] {
         let bytes = [UInt8](data)

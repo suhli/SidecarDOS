@@ -53,14 +53,29 @@ import CoreVideo
         encoder.setFragmentTexture(y, index: 0); encoder.setFragmentTexture(uv, index: 1)
         encoder.drawPrimitives(type: .triangleStrip, vertexStart: 0, vertexCount: 4)
         encoder.endEncoding(); inFlight += 1
-        command.addCompletedHandler { [weak self, yRef, uvRef, buffer] _ in
+        command.addCompletedHandler { [weak self, yRef, uvRef, buffer] command in
             _ = (yRef, uvRef, buffer)
-            DispatchQueue.main.async { self?.inFlight = max(0, (self?.inFlight ?? 1) - 1) }
+            #if targetEnvironment(simulator)
+            // Simulator has no drawable presentation handler. Completion is only a timing estimate.
+            let completed = command.status == .completed
+            let end = monotonicUS()
+            #endif
+            DispatchQueue.main.async {
+                guard let self else { return }
+                self.inFlight = max(0, self.inFlight - 1)
+                #if targetEnvironment(simulator)
+                if completed { self.onPresent?(frame, start, end) }
+                #endif
+            }
         }
+        #if !targetEnvironment(simulator)
         drawable.addPresentedHandler { [weak self] drawable in
-            let present = drawable.presentedTime > 0 ? UInt64(drawable.presentedTime * 1_000_000) : monotonicUS()
+            let time = drawable.presentedTime
+            guard time > 0 else { return } // A skipped drawable was not presented.
+            let present = UInt64(time * 1_000_000)
             DispatchQueue.main.async { self?.onPresent?(frame, start, present) }
         }
+        #endif
         command.present(drawable); command.commit()
     }
 }

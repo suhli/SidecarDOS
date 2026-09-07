@@ -22,22 +22,35 @@ jobs:
           name: SidecarDOS-Host-Windows-x64
           path: target/release/sidecardos-host.exe
   ipad:
+    name: iPad (${{ matrix.target }})
     runs-on: macos-15
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: simulator
+            sdk: iphonesimulator
+            destination: 'generic/platform=iOS Simulator'
+            action: build-for-testing
+          - target: device
+            sdk: iphoneos
+            destination: 'generic/platform=iOS'
+            action: build
     steps:
       - uses: actions/checkout@v4
       - run: brew install xcodegen
       - run: cd ipad && xcodegen generate
-      - name: Build iPad app and tests
+      - name: Build iPad (${{ matrix.target }})
         shell: bash
         run: |
           set -o pipefail
           mkdir -p build
-          xcodebuild -project ipad/SidecarDOS.xcodeproj -scheme SidecarDOS -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' -resultBundlePath build/ipad-build.xcresult CODE_SIGNING_ALLOWED=NO build-for-testing 2>&1 | tee build/ipad-build.log
+          xcodebuild -project ipad/SidecarDOS.xcodeproj -scheme SidecarDOS -sdk "${{ matrix.sdk }}" -destination "${{ matrix.destination }}" -resultBundlePath build/ipad-build.xcresult CODE_SIGNING_ALLOWED=NO ${{ matrix.action }} 2>&1 | tee build/ipad-build.log
       - name: Upload iPad build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: SidecarDOS-iPad-build-diagnostics
+          name: SidecarDOS-iPad-${{ matrix.target }}-build-diagnostics
           path: |
             build/ipad-build.log
             build/ipad-build.xcresult

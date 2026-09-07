@@ -163,7 +163,7 @@ The complete authentication and version-negotiation contract is in the [protocol
 
 Host logs are at `%LOCALAPPDATA%/SidecarDOS/host.log`. For more detail, set `RUST_LOG=sidecardos_host=debug,network=debug,topology=debug` before launching the Host. Logs use tracing targets and structured fields. Driver failures also emit debugger output; UMDF/WDF investigation may require Windows events and WDK debugging tools. The iPad app uses `os.Logger`.
 
-The iPad overlay reports FPS, bitrate, RTT, estimated loss, decode time, render time and estimated end-to-end latency. Ping/Pong estimates the offset between device monotonic clocks; these latency values are estimates, not measurements from synchronized hardware clocks.
+The iPad overlay reports FPS, bitrate, RTT, estimated loss, decode time, render time and estimated end-to-end latency. Ping/Pong estimates the offset between device monotonic clocks; these latency values are estimates, not measurements from synchronized hardware clocks. Simulator builds use GPU command completion in place of unavailable drawable presentation callbacks, so their statistics do not measure actual display latency.
 
 ## Architecture
 

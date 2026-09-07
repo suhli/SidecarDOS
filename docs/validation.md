@@ -52,7 +52,15 @@ The implementation and unsigned build outputs are provided for this integration 
 
 ## CI status on September 7, 2026
 
-The latest published [Actions run, 33863256206](https://github.com/suhli/SidecarDOS/actions/runs/33863256206), builds commit 4c638d4e17e52c3c8e8b9f58ab7461e0eb6b62fb: Host passed and iPad failed. The newly supplied log still refers to the old Transport.swift callback bodies (for example, direct epoch access at line 45). The MainActor callback corrections and failure-artifact workflow changes remain uncommitted in the local working tree and were not included in that run. A new commit containing these changes must be pushed before CI can validate them; rerunning the previous job builds its original commit.
+An earlier check found that [Actions run 33863256206](https://github.com/suhli/SidecarDOS/actions/runs/33863256206) built commit 4c638d4e17e52c3c8e8b9f58ab7461e0eb6b62fb: Host passed and iPad failed. At that point, the MainActor callback corrections had not been committed. Those changes are now included in commit b555fb3.
+
+The subsequent supplied Xcode 16.4 log includes the updated diagnostic workflow and no longer reports the Transport.swift isolation errors. It fails on DisplayRenderer.swift because the Simulator target does not expose addPresentedHandler, and warns about reading a non-Sendable VTDecompressionSession from H264Decoder's nonisolated deinit.
+
+- Simulator builds now exclude drawable presentation callbacks and estimate timing using successful GPU command-buffer completion. Physical iPad builds retain actual drawable presentation timing.
+- A private session owner drains and invalidates the VideoToolbox session when released, including during decoder reset, reconfiguration and destruction. No concurrency checks are disabled or native session Sendable conformance added.
+- The iPad CI job now builds both Simulator (including the XCTest target) and the unsigned iPhoneOS app so both conditional rendering paths are compiled. Each target has a separate diagnostic artifact.
+
+The revised Swift source has been reviewed locally, but this Windows environment cannot compile either Apple SDK target. A new CI run is required to validate these changes.
 
 ## Current limitations
 
