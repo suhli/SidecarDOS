@@ -2,7 +2,7 @@
 
 [User guide](../README.md) · [Advanced guide](advanced.md)
 
-This document is the English-only record of implementation checks, acceptance gaps and current limitations. Local checks recorded below were performed on September 4, 2026.
+This document is the English-only record of implementation checks, acceptance gaps and current limitations. Local build checks below were performed on September 4, 2026; the latest remote CI status was inspected on September 7, 2026.
 
 ## Overall status
 
@@ -45,8 +45,14 @@ The implementation and unsigned build outputs are provided for this integration 
 
 [GitHub Actions run 33861481873](https://github.com/suhli/SidecarDOS/actions/runs/33861481873) failed in both jobs.
 
-- Host stopped at the generated-protocol check. The failure was reproduced locally by converting generated files to CRLF. The checker now normalizes CRLF only, generated outputs have LF Git attributes, and regression tests are part of CI and the Windows build script. The updated generator tests, protocol check, Rust formatting, Rust tests, strict Clippy and release build passed locally. This fix has not yet been verified in a new remote run.
+- Host stopped at the generated-protocol check. The failure was reproduced locally by converting generated files to CRLF. The checker now normalizes CRLF only, generated outputs have LF Git attributes, and regression tests are part of CI and the Windows build script. The updated generator tests, protocol check, Rust formatting, Rust tests, strict Clippy and release build passed locally. The Host job subsequently passed in run 33863256206 at commit 4c638d4e17e52c3c8e8b9f58ab7461e0eb6b62fb.
 - The iPad job reached Xcode 16.4 / iOS Simulator SDK 18.5 and exited with code 65. The supplied log identified two initializer conflicts on both arm64 and x86_64: a throwing DisplayRenderer.init() overriding non-throwing NSObject.init(), and a failable InputView.init(coder:) overriding the non-failable MTKView initializer. The renderer now uses a throwing makeDefault() factory and an explicit init(device:); the unavailable coder initializer matches the superclass and delegates to it. Source and call sites were reviewed locally. Xcode is unavailable on this Windows machine, so the corrected iPad build still requires a new CI run.
+
+- A subsequent supplied iPad log passed the initializer declarations and reported MainActor isolation errors in QUIC Sendable state callbacks, plus matching warnings in receive/send completions. All seven QUIC/TLS callback boundaries now explicitly use MainActor.assumeIsolated under their configured main-queue contract. Bonjour callbacks use the same pattern with stale-generation rejection; connection state handlers no longer retain their owning connections. Concurrency checking remains enabled. Xcode verification is still pending because this environment is Windows. The iPad workflow now retains the complete build log and xcresult bundle as a failure artifact.
+
+## CI status on September 7, 2026
+
+The latest published [Actions run, 33863256206](https://github.com/suhli/SidecarDOS/actions/runs/33863256206), builds commit 4c638d4e17e52c3c8e8b9f58ab7461e0eb6b62fb: Host passed and iPad failed. The newly supplied log still refers to the old Transport.swift callback bodies (for example, direct epoch access at line 45). The MainActor callback corrections and failure-artifact workflow changes remain uncommitted in the local working tree and were not included in that run. A new commit containing these changes must be pushed before CI can validate them; rerunning the previous job builds its original commit.
 
 ## Current limitations
 

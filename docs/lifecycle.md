@@ -42,7 +42,9 @@ Read-only user settings remain on disk. A manual Windows source resolution chang
 
 ## Apple lifecycle
 
-Network callbacks run on the main queue; each transport has a generation counter that rejects callbacks from canceled connections. Reliable framing retains partial messages until complete. Receive sizes, sends and frame assemblies are bounded.
+Network connections, groups, Bonjour browsing and TLS verification explicitly schedule callbacks on the main queue. Their Sendable callbacks enter MainActor.assumeIsolated before accessing state; this synchronously checks the executor contract and preserves packet ordering without an extra Task or dispatch hop. Each transport and browser has a generation counter that rejects callbacks from canceled operations. State handlers use weak captures and are cleared during teardown. Reliable framing retains partial messages until complete. Receive sizes, sends and frame assemblies are bounded.
+
+VideoToolbox and Metal callbacks can run off the main queue and continue to dispatch state updates to DispatchQueue.main. They must not use assumeIsolated on the framework callback queue. The Timer callback already uses assumeIsolated because the timer is created on the main run loop. See Apple's [Swift 6 migration guidance](https://developer.apple.com/videos/play/wwdc2024/10169/) for the synchronous callback isolation pattern.
 
 VideoToolbox's asynchronous jobs retain frame context and weakly reference the decoder. Reset invalidates the decoder generation, waits for submitted callbacks, and invalidates the VT session. Metal retains CV texture views until its command buffer completes. The input UIView relinquishes held input when dismantled.
 
