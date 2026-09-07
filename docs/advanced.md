@@ -111,6 +111,14 @@ xcodebuild -project SidecarDOS.xcodeproj -scheme SidecarDOS -sdk iphonesimulator
 
 `ipad/project.yml` supplies the Local Network privacy description and the `_sidecardos._udp` Bonjour declaration. Hardware decoding, input and wireless performance require a physical iPad. The repository's CI definition includes Windows and macOS build jobs; execution results are tracked separately in the [validation record](validation.md).
 
+### Download an unsigned IPA from CI
+
+After the `iPad (device)` job succeeds, open the GitHub Actions run and download the `SidecarDOS-iPad-unsigned` artifact. Extract the downloaded artifact archive to obtain `SidecarDOS-unsigned.ipa`.
+
+CI builds the iPhoneOS app in Release configuration with signing disabled, then packages it as `Payload/SidecarDOS.app` inside the IPA. It requires no Apple signing certificates, provisioning profiles or signing secrets in GitHub. The Simulator job remains a Debug build-for-testing check and does not produce an IPA.
+
+The IPA must be signed with an appropriate certificate and provisioning profile before it can run on a physical iPad; it is not ready for direct installation, TestFlight or App Store submission. See Apple’s [device deployment requirements](https://help.apple.com/xcode/mac/current/en.lproj/dev5a825a1ca.html). You can also build and deploy directly from Xcode as described above.
+
 ## Configuration
 
 On first launch, the Host creates `%LOCALAPPDATA%/SidecarDOS/config.toml`:

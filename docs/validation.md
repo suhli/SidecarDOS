@@ -62,6 +62,10 @@ The subsequent supplied Xcode 16.4 log includes the updated diagnostic workflow 
 
 The revised Swift source has been reviewed locally, but this Windows environment cannot compile either Apple SDK target. A new CI run is required to validate these changes.
 
+## Unsigned IPA packaging
+
+The device CI job is configured to build Release for iPhoneOS, package the app under `Payload/` and upload `SidecarDOS-unsigned.ipa` as the `SidecarDOS-iPad-unsigned` artifact. Simulator builds use Debug and are excluded from packaging. IPA generation, signing and installation have not been executed in this Windows environment; a successful macOS CI run is still required to verify the generated artifact.
+
 ## Current limitations
 
 - Supported scope is Windows 11 x64 to iPadOS, with one interactive user, one iPad and one virtual display. There is no Session 0 desktop control.

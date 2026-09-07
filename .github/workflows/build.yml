@@ -30,10 +30,12 @@ jobs:
         include:
           - target: simulator
             sdk: iphonesimulator
+            configuration: Debug
             destination: 'generic/platform=iOS Simulator'
             action: build-for-testing
           - target: device
             sdk: iphoneos
+            configuration: Release
             destination: 'generic/platform=iOS'
             action: build
     steps:
@@ -45,7 +47,24 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p build
-          xcodebuild -project ipad/SidecarDOS.xcodeproj -scheme SidecarDOS -sdk "${{ matrix.sdk }}" -destination "${{ matrix.destination }}" -resultBundlePath build/ipad-build.xcresult CODE_SIGNING_ALLOWED=NO ${{ matrix.action }} 2>&1 | tee build/ipad-build.log
+          xcodebuild -project ipad/SidecarDOS.xcodeproj -scheme SidecarDOS -sdk "${{ matrix.sdk }}" -destination "${{ matrix.destination }}" -configuration "${{ matrix.configuration }}" -derivedDataPath build/DerivedData -resultBundlePath build/ipad-build.xcresult CODE_SIGNING_ALLOWED=NO ${{ matrix.action }} 2>&1 | tee build/ipad-build.log
+      - name: Package unsigned iPad IPA
+        if: matrix.target == 'device'
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/DerivedData/Build/Products/Release-iphoneos/SidecarDOS.app"
+          test -f "$app/SidecarDOS"
+          mkdir -p build/ipa/Payload
+          ditto "$app" build/ipa/Payload/SidecarDOS.app
+          (cd build/ipa && zip -qry ../SidecarDOS-unsigned.ipa Payload)
+      - name: Upload unsigned iPad IPA
+        if: matrix.target == 'device'
+        uses: actions/upload-artifact@v4
+        with:
+          name: SidecarDOS-iPad-unsigned
+          path: build/SidecarDOS-unsigned.ipa
+          if-no-files-found: error
       - name: Upload iPad build diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
